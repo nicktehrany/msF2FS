@@ -331,10 +331,35 @@ struct sit_entry_set {
 /*
  * inline functions
  */
+#ifdef CONFIG_F2FS_MULTI_STREAM_RR
+static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
+{
+    int i;
+    int streams = atomic_read(&sbi->stream_ctrs[type]);
+    for (i = 0; i < streams; i++)
+    {
+       // TODO dummy for now, check if segment is idle
+       if (i == 0)
+           break;
+    }
+
+	return (struct curseg_info *)(SM_I(sbi)->curseg_array + (i * NR_CURSEG_TYPE + type));
+}
+
+/* 
+ * Return the curseg_info of type at a stream index
+ */
+static inline struct curseg_info *CURSEG_I_AT(struct f2fs_sb_info *sbi, int type, 
+        int stream)
+{
+	return (struct curseg_info *)(SM_I(sbi)->curseg_array + (stream * NR_CURSEG_TYPE + type));
+}
+#else
 static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 {
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
 }
+#endif
 
 static inline struct seg_entry *get_seg_entry(struct f2fs_sb_info *sbi,
 						unsigned int segno)

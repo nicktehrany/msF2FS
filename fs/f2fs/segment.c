@@ -4301,8 +4301,14 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 	struct curseg_info *array;
 	int i;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	array = f2fs_kzalloc(sbi, array_size(NR_CURSEG_TYPE * MAX_ACTIVE_LOGS,
+					sizeof(*array)), GFP_KERNEL);
+#else
 	array = f2fs_kzalloc(sbi, array_size(NR_CURSEG_TYPE,
 					sizeof(*array)), GFP_KERNEL);
+#endif
+
 	if (!array)
 		return -ENOMEM;
 
@@ -4327,6 +4333,13 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 		array[i].segno = NULL_SEGNO;
 		array[i].next_blkoff = 0;
 		array[i].inited = false;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        if (i < NR_PERSISTENT_LOG)
+        {
+            atomic_inc(&sbi->nr_streams);
+            atomic_inc(&sbi->stream_ctrs[i]);
+        }
+#endif
 	}
 	return restore_curseg_summaries(sbi);
 }

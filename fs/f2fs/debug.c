@@ -172,13 +172,25 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 		* 100 / (int)(sbi->user_block_count >> sbi->log_blocks_per_seg)
 		/ 2;
 	si->util_invalid = 50 - si->util_free - si->util_valid;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    si->active_logs = F2FS_OPTION(sbi).active_logs;
+    si->nr_streams = atomic_read(&sbi->nr_streams);
+#else
 	for (i = CURSEG_HOT_DATA; i < NO_CHECK_TYPE; i++) {
-		struct curseg_info *curseg = CURSEG_I(sbi, i);
+        int streams = atomic_read(&sbi->stream_ctrs[i]);
+        int j;
+		struct curseg_info *curseg; 
+        
+        for (j = 0; j < streams; j++)
+        {
+            CURSEG_I_AT(sbi, i, j);
+            si->curseg[i * j + i] = curseg->segno;
+            si->cursec[i * j + i] = GET_SEC_FROM_SEG(sbi, curseg->segno);
+            si->curzone[i * j + i] = GET_ZONE_FROM_SEC(sbi, si->cursec[i]);
+        }
 
-		si->curseg[i] = curseg->segno;
-		si->cursec[i] = GET_SEC_FROM_SEG(sbi, curseg->segno);
-		si->curzone[i] = GET_ZONE_FROM_SEC(sbi, si->cursec[i]);
 	}
+#endif
 
 	for (i = META_CP; i < META_MAX; i++)
 		si->meta_count[i] = atomic_read(&sbi->meta_count[i]);
@@ -390,6 +402,83 @@ static int stat_show(struct seq_file *s, void *v)
 		seq_printf(s, "\nMain area: %d segs, %d secs %d zones\n",
 			   si->main_area_segs, si->main_area_sections,
 			   si->main_area_zones);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        seq_printf(s, "\n    Multi-Stream INFO:\n");
+        seq_printf(s, "  - Maximum Streams: %u\n", 
+                si->active_logs);
+        seq_printf(s, "  - Active Streams: %u\n\n",
+                si->nr_streams);
+		seq_printf(s, "    TYPE  \t\t%8s %8s %8s %10s %10s %10s\n",
+			   "segno", "secno", "zoneno", "dirty_seg", "full_seg", "valid_blk");
+        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_DATA]); i++)
+        {
+            seq_printf(s, "  - COLD data STREAM %u: %8d %8d %8d %10u %10u %10u\n",
+                    i, si->curseg[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
+                    si->cursec[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
+                    si->curzone[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
+                    si->dirty_seg[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
+                    si->full_seg[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
+                    si->valid_blks[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA]);
+        }
+        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_DATA]); i++)
+        {
+		seq_printf(s, "  - WARM data STREAM %u: %8d %8d %8d %10u %10u %10u\n",
+			   i, si->curseg[CURSEG_WARM_DATA],
+			   si->cursec[CURSEG_WARM_DATA],
+			   si->curzone[CURSEG_WARM_DATA],
+			   si->dirty_seg[CURSEG_WARM_DATA],
+			   si->full_seg[CURSEG_WARM_DATA],
+			   si->valid_blks[CURSEG_WARM_DATA]);
+        }
+        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_DATA]); i++)
+        {
+		seq_printf(s, "  - HOT  data STREAM %u: %8d %8d %8d %10u %10u %10u\n",
+			   i, si->curseg[CURSEG_HOT_DATA],
+			   si->cursec[CURSEG_HOT_DATA],
+			   si->curzone[CURSEG_HOT_DATA],
+			   si->dirty_seg[CURSEG_HOT_DATA],
+			   si->full_seg[CURSEG_HOT_DATA],
+			   si->valid_blks[CURSEG_HOT_DATA]);
+        }
+        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_NODE]); i++)
+        {
+            seq_printf(s, "  - COLD node STREAM %u: %8d %8d %8d %10u %10u %10u\n",
+                    i, si->curseg[CURSEG_COLD_NODE],
+                    si->cursec[CURSEG_COLD_NODE],
+                    si->curzone[CURSEG_COLD_NODE],
+                    si->dirty_seg[CURSEG_COLD_NODE],
+                    si->full_seg[CURSEG_COLD_NODE],
+                    si->valid_blks[CURSEG_COLD_NODE]);
+        }
+        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_NODE]); i++)
+        {
+		seq_printf(s, "  - WARM node STREAM %u: %8d %8d %8d %10u %10u %10u\n",
+			   i, si->curseg[CURSEG_WARM_NODE],
+			   si->cursec[CURSEG_WARM_NODE],
+			   si->curzone[CURSEG_WARM_NODE],
+			   si->dirty_seg[CURSEG_WARM_NODE],
+			   si->full_seg[CURSEG_WARM_NODE],
+			   si->valid_blks[CURSEG_WARM_NODE]);
+        }
+        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_NODE]); i++)
+        {
+            seq_printf(s, "  - HOT  node STREAM %u: %8d %8d %8d %10u %10u %10u\n",
+                    i, si->curseg[CURSEG_HOT_NODE],
+                    si->cursec[CURSEG_HOT_NODE],
+                    si->curzone[CURSEG_HOT_NODE],
+                    si->dirty_seg[CURSEG_HOT_NODE],
+                    si->full_seg[CURSEG_HOT_NODE],
+                    si->valid_blks[CURSEG_HOT_NODE]);
+        }
+        seq_printf(s, "  - Pinned file:     %8d %8d %8d\n",
+                si->curseg[CURSEG_COLD_DATA_PINNED],
+                si->cursec[CURSEG_COLD_DATA_PINNED],
+                si->curzone[CURSEG_COLD_DATA_PINNED]);
+        seq_printf(s, "  - ATGC   data:     %8d %8d %8d\n",
+                si->curseg[CURSEG_ALL_DATA_ATGC],
+                si->cursec[CURSEG_ALL_DATA_ATGC],
+                si->curzone[CURSEG_ALL_DATA_ATGC]);
+#else
 		seq_printf(s, "    TYPE         %8s %8s %8s %10s %10s %10s\n",
 			   "segno", "secno", "zoneno", "dirty_seg", "full_seg", "valid_blk");
 		seq_printf(s, "  - COLD   data: %8d %8d %8d %10u %10u %10u\n",
@@ -434,14 +523,15 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->dirty_seg[CURSEG_COLD_NODE],
 			   si->full_seg[CURSEG_COLD_NODE],
 			   si->valid_blks[CURSEG_COLD_NODE]);
-		seq_printf(s, "  - Pinned file: %8d %8d %8d\n",
-			   si->curseg[CURSEG_COLD_DATA_PINNED],
-			   si->cursec[CURSEG_COLD_DATA_PINNED],
-			   si->curzone[CURSEG_COLD_DATA_PINNED]);
-		seq_printf(s, "  - ATGC   data: %8d %8d %8d\n",
-			   si->curseg[CURSEG_ALL_DATA_ATGC],
-			   si->cursec[CURSEG_ALL_DATA_ATGC],
-			   si->curzone[CURSEG_ALL_DATA_ATGC]);
+        seq_printf(s, "  - Pinned file: %8d %8d %8d\n",
+                si->curseg[CURSEG_COLD_DATA_PINNED],
+                si->cursec[CURSEG_COLD_DATA_PINNED],
+                si->curzone[CURSEG_COLD_DATA_PINNED]);
+        seq_printf(s, "  - ATGC   data: %8d %8d %8d\n",
+                si->curseg[CURSEG_ALL_DATA_ATGC],
+                si->cursec[CURSEG_ALL_DATA_ATGC],
+                si->curzone[CURSEG_ALL_DATA_ATGC]);
+#endif
 		seq_printf(s, "\n  - Valid: %d\n  - Dirty: %d\n",
 			   si->main_area_segs - si->dirty_count -
 			   si->prefree_count - si->free_segs,

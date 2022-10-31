@@ -166,7 +166,8 @@ config F2FS_MULTI_STREAM_RR
     depends on F2FS_MULTI_STREAM
     default y
     help
-        Use Round Robin allocation for new streams of a log type. Opens
-        new streams, independent of type, up to the configured maximum 
-        number of concurrent streams (default 16 unless specified 
-        otherwise at mount with active_logs=x).
+        Use Round Robin allocation for data into streams of a log type. 
+        Opens new streams, independent of type, up to the configured maximum 
+        number of concurrent streams (default 16 unless specified otherwise 
+        at mount with active_logs=x). If maximum is reached, writes data in 
+        LFS manner into the next idle segment in RR fashion.

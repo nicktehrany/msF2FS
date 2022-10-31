@@ -152,11 +152,11 @@ struct f2fs_checkpoint {
 	/* information of current node segments */
 #ifdef CONFIG_F2FS_MULTI_STREAMS
     __le32 nr_streams;
-	__le32 cur_node_segno[MAX_ACTIVE_NODE_LOGS * MAX_ACTIVE_NODE_LOGS];
-	__le16 cur_node_blkoff[MAX_ACTIVE_NODE_LOGS * MAX_ACTIVE_NODE_LOGS];
+	__le32 cur_node_segno[(MAX_ACTIVE_LOGS - MAX_ACTIVE_DATA_LOGS) * NR_CURSEG_NODE_TYPE];
+	__le16 cur_node_blkoff[(MAX_ACTIVE_LOGS - MAX_ACTIVE_DATA_LOGS) * NR_CURSEG_NODE_TYPE];
 	/* information of current data segments */
-	__le32 cur_data_segno[MAX_ACTIVE_DATA_LOGS * MAX_ACTIVE_DATA_LOGS];
-	__le16 cur_data_blkoff[MAX_ACTIVE_DATA_LOGS * MAX_ACTIVE_DATA_LOGS];
+	__le32 cur_data_segno[(MAX_ACTIVE_LOGS - MAX_ACTIVE_NODE_LOGS) * NR_CURSEG_DATA_TYPE];
+	__le16 cur_data_blkoff[(MAX_ACTIVE_LOGS - MAX_ACTIVE_NODE_LOGS) * NR_CURSEG_DATA_TYPE];
 #else
 	__le32 cur_node_segno[MAX_ACTIVE_NODE_LOGS];
 	__le16 cur_node_blkoff[MAX_ACTIVE_NODE_LOGS];
@@ -176,7 +176,7 @@ struct f2fs_checkpoint {
 	__le64 elapsed_time;		/* mounted time */
 	/* allocation type of current segment */
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned char alloc_type[MAX_ACTIVE_LOGS * MAX_ACTIVE_DATA_LOGS * 2];
+    unsigned char alloc_type[MAX_ACTIVE_LOGS * 9];
 #else
     unsigned char alloc_type[MAX_ACTIVE_LOGS];
 #endif

@@ -766,7 +766,7 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-            if (arg > 16 || arg % 2 != 0)
+            if (arg > MAX_ACTIVE_LOGS)
                 return -EINVAL;
 #else
 			if (arg != 2 && arg != 4 &&
@@ -2003,21 +2003,14 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 
 static void default_options(struct f2fs_sb_info *sbi)
 {
-
-#ifdef CONFIG_F2FS_MULTI_STREAM_RR
+#ifdef CONFIG_F2FS_MULTI_STREAM
     int i;
 
     atomic_set(&sbi->nr_streams, 0);
 
-    for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_DATA; i++) 
+    for (i = CURSEG_HOT_DATA; i < NR_CURSEG_TYPE; i++) 
     {
-        /* 
-         * TODO: Should we lock this here? semaphore or leave and in error case ignore?
-         * if it doesn't break correctness?
-         *
-         * */
-        atomic_set(&sbi->stream_ctrs[i], 1); /* Default open one stream per type */
-        atomic_inc(&sbi->nr_streams);
+        atomic_set(&sbi->stream_ctrs[i], 0);
     }
 #endif
 

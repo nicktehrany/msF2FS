@@ -1834,9 +1834,9 @@ struct f2fs_sb_info {
 	struct iostat_lat_info *iostat_io_lat;
 #endif
 
-#ifdef CONFIG_F2FS_MULTI_STREAM_RR
+#ifdef CONFIG_F2FS_MULTI_STREAM
     atomic_t nr_streams;
-    atomic_t stream_ctrs[NR_CURSEG_TYPE];
+    atomic_t stream_ctrs[NR_CURSEG_TYPE]; // TODO: fix handling of COLD_PINN it's same as cold don't need other entry for it
 #endif
 };
 
@@ -3844,12 +3844,23 @@ struct f2fs_stat_info {
 	int bg_node_segs, bg_data_segs;
 	int tot_blks, data_blks, node_blks;
 	int bg_data_blks, bg_node_blks;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int active_logs; /* user specified maximum active streams */
+    int nr_streams; /* currently active streams */
+	int curseg[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
+	int cursec[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
+	int curzone[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
+	unsigned int dirty_seg[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
+	unsigned int full_seg[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
+	unsigned int valid_blks[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
+#else
 	int curseg[NR_CURSEG_TYPE];
 	int cursec[NR_CURSEG_TYPE];
 	int curzone[NR_CURSEG_TYPE];
 	unsigned int dirty_seg[NR_CURSEG_TYPE];
 	unsigned int full_seg[NR_CURSEG_TYPE];
 	unsigned int valid_blks[NR_CURSEG_TYPE];
+#endif
 
 	unsigned int meta_count[META_MAX];
 	unsigned int segment_count[2];
