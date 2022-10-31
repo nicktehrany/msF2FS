@@ -3188,11 +3188,17 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 	case 4:
 		type = __get_segment_type_4(fio);
 		break;
-	case 6:
+#ifdef CONFIG_F2FS_MUTLI_STREAM
+    default:
+		type = __get_segment_type_6(fio);
+		break;
+#else
+    case 6:
 		type = __get_segment_type_6(fio);
 		break;
 	default:
 		f2fs_bug_on(fio->sbi, true);
+#endif
 	}
 
 	if (IS_HOT(type))

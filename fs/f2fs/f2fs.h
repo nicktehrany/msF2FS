@@ -1833,6 +1833,11 @@ struct f2fs_sb_info {
 	spinlock_t iostat_lat_lock;
 	struct iostat_lat_info *iostat_io_lat;
 #endif
+
+#ifdef CONFIG_F2FS_MULTI_STREAM_RR
+    atomic_t nr_streams;
+    atomic_t stream_ctrs[NR_CURSEG_TYPE];
+#endif
 };
 
 #ifdef CONFIG_F2FS_FAULT_INJECTION

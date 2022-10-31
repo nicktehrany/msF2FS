@@ -150,3 +150,23 @@ config F2FS_UNFAIR_RWSEM
 	help
 	  Use unfair rw_semaphore, if system configured IO priority by block
 	  cgroup.
+
+config F2FS_MULTI_STREAM
+    bool "F2FS multiple concurrent streams per log type (EXPERIMENTAL)"
+    depends on F2FS_FS 
+    select F2FS_MULTI_STREAM_RR
+    help
+        Experimental implementation that, instead of using 3 data logs 
+        (hot/warm/cold) and 3 node logs (hot/warm/cold), it allows using
+        multiple streams for each log type. A total up to 16 collective
+        (for all types) streams is supported. 
+
+config F2FS_MULTI_STREAM_RR
+    bool "Round Robin Stream Allocation"
+    depends on F2FS_MULTI_STREAM
+    default y
+    help
+        Use Round Robin allocation for new streams of a log type. Opens
+        new streams, independent of type, up to the configured maximum 
+        number of concurrent streams (default 16 unless specified 
+        otherwise at mount with active_logs=x).
