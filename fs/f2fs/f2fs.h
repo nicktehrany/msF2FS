@@ -1836,7 +1836,7 @@ struct f2fs_sb_info {
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
     atomic_t nr_streams;
-    atomic_t stream_ctrs[NR_CURSEG_TYPE]; // TODO: fix handling of COLD_PINN it's same as cold don't need other entry for it
+    atomic_t stream_ctrs[NO_CHECK_TYPE]; // TODO: fix handling of COLD_PINN it's same as cold don't need other entry for it
 #endif
 };
 
