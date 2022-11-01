@@ -3210,16 +3210,41 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 	return type;
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+struct curseg_info *f2fs_allocate_new_segment_stream(struct f2fs_sb_info *sbi, int type)
+{
+    if (atomic_read(&sbi->nr_active_streams) >= sbi->nr_max_streams)
+        return CURSEG_I(sbi, type);
+    else 
+    {
+        // TODO: locking and actual implementation
+        atomic_inc(&sbi->nr_active_streams);
+        atomic_inc(&sbi->stream_ctrs[type]);
+        allocate_segment_by_default(sbi, type, 1); 
+    }
+
+    return CURSEG_I(sbi, type);
+}
+#endif
+
 void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		block_t old_blkaddr, block_t *new_blkaddr,
 		struct f2fs_summary *sum, int type,
 		struct f2fs_io_info *fio)
 {
 	struct sit_info *sit_i = SIT_I(sbi);
-	struct curseg_info *curseg = CURSEG_I(sbi, type);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    struct curseg_info *curseg;
+#else
+    struct curseg_info *curseg = CURSEG_I(sbi, type);
+#endif
 	unsigned long long old_mtime;
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    curseg = f2fs_allocate_new_segment_stream(sbi, type);
+#endif
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
@@ -4336,7 +4361,7 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_F2FS_MULTI_STREAM
         if (i < NR_PERSISTENT_LOG)
         {
-            atomic_inc(&sbi->nr_streams);
+            atomic_inc(&sbi->nr_active_streams);
             atomic_inc(&sbi->stream_ctrs[i]);
         }
 #endif

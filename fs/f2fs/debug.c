@@ -173,8 +173,8 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 		/ 2;
 	si->util_invalid = 50 - si->util_free - si->util_valid;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    si->active_logs = F2FS_OPTION(sbi).active_logs;
-    si->nr_streams = atomic_read(&sbi->nr_streams);
+    si->nr_max_streams = sbi->nr_max_streams;
+    si->nr_active_streams = atomic_read(&sbi->nr_active_streams);
     for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_NODE; i++) {
         int streams = atomic_read(&sbi->stream_ctrs[i]);
         int j;
@@ -184,7 +184,6 @@ static void update_general_status(struct f2fs_sb_info *sbi)
         {
             curseg = CURSEG_I_AT(sbi, i, j);
             si->curseg[i * j + i] = curseg->segno;
-            f2fs_info(sbi, "curseg: temp %u stream %u %u\n", i, j, curseg->segno);
             si->cursec[i * j + i] = GET_SEC_FROM_SEG(sbi, curseg->segno);
             si->curzone[i * j + i] = GET_ZONE_FROM_SEC(sbi, si->cursec[i]);
         }
@@ -418,9 +417,9 @@ static int stat_show(struct seq_file *s, void *v)
 #ifdef CONFIG_F2FS_MULTI_STREAM
         seq_printf(s, "\n    Multi-Stream INFO:\n");
         seq_printf(s, "  - Maximum Streams: %u\n", 
-                si->active_logs);
+                si->nr_max_streams);
         seq_printf(s, "  - Active Streams: %u\n",
-                si->nr_streams);
+                si->nr_active_streams);
         seq_printf(s, "  - STREAMS: [ %2u %2u %2u %2u %2u %2u  ]\n",
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_DATA]),
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_DATA]),
@@ -428,7 +427,7 @@ static int stat_show(struct seq_file *s, void *v)
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_NODE]),
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_NODE]),
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_NODE]));
-		seq_printf(s, "\n    TYPE     STREAM  %8s %8s %8s %10s %10s %10s\n",
+		seq_printf(s, "\n    TYPE       STREAM %6s %8s %8s %10s %10s %10s\n",
 			   "segno", "secno", "zoneno", "dirty_seg", "full_seg", "valid_blk");
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_DATA]); i++)
         {
@@ -490,11 +489,11 @@ static int stat_show(struct seq_file *s, void *v)
                     si->full_seg[CURSEG_COLD_NODE],
                     si->valid_blks[CURSEG_COLD_NODE]);
         }
-        seq_printf(s, "  - Pinned file:  %8d %8d %8d\n",
+        seq_printf(s, "  - Pinned file:    %8d %8d %8d\n",
                 si->curseg[CURSEG_COLD_DATA_PINNED],
                 si->cursec[CURSEG_COLD_DATA_PINNED],
                 si->curzone[CURSEG_COLD_DATA_PINNED]);
-        seq_printf(s, "  - ATGC   data:  %8d %8d %8d\n",
+        seq_printf(s, "  - ATGC   data:    %8d %8d %8d\n",
                 si->curseg[CURSEG_ALL_DATA_ATGC],
                 si->cursec[CURSEG_ALL_DATA_ATGC],
                 si->curzone[CURSEG_ALL_DATA_ATGC]);

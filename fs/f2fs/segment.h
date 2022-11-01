@@ -334,14 +334,16 @@ struct sit_entry_set {
 #ifdef CONFIG_F2FS_MULTI_STREAM_RR
 static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 {
-    int i;
     int streams = atomic_read(&sbi->stream_ctrs[type]);
-    for (i = 0; i < streams; i++)
-    {
-       // TODO dummy for now, check if segment is idle
-       if (i == 0)
-           break;
-    }
+    int i = streams;
+    do
+    { 
+        i--;
+
+        // TODO: hardcoded to use 2nd stream, actually need to check things
+        if (i == 1)
+            break;
+    } while (i > 0);
 
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + (i * NR_CURSEG_TYPE + type));
 }

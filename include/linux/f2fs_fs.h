@@ -150,13 +150,13 @@ struct f2fs_checkpoint {
 	__le32 free_segment_count;	/* # of free segments in main area */
 
 	/* information of current node segments */
-#ifdef CONFIG_F2FS_MULTI_STREAMS
-    __le32 nr_streams;
-	__le32 cur_node_segno[(MAX_ACTIVE_LOGS - MAX_ACTIVE_DATA_LOGS) * NR_CURSEG_NODE_TYPE];
-	__le16 cur_node_blkoff[(MAX_ACTIVE_LOGS - MAX_ACTIVE_DATA_LOGS) * NR_CURSEG_NODE_TYPE];
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    __le32 nr_max_streams;
+	__le32 cur_node_segno[MAX_ACTIVE_LOGS * 6];
+	__le16 cur_node_blkoff[MAX_ACTIVE_LOGS * 6];
 	/* information of current data segments */
-	__le32 cur_data_segno[(MAX_ACTIVE_LOGS - MAX_ACTIVE_NODE_LOGS) * NR_CURSEG_DATA_TYPE];
-	__le16 cur_data_blkoff[(MAX_ACTIVE_LOGS - MAX_ACTIVE_NODE_LOGS) * NR_CURSEG_DATA_TYPE];
+	__le32 cur_data_segno[MAX_ACTIVE_LOGS * 6];
+	__le16 cur_data_blkoff[MAX_ACTIVE_LOGS * 6];
 #else
 	__le32 cur_node_segno[MAX_ACTIVE_NODE_LOGS];
 	__le16 cur_node_blkoff[MAX_ACTIVE_NODE_LOGS];
@@ -176,7 +176,7 @@ struct f2fs_checkpoint {
 	__le64 elapsed_time;		/* mounted time */
 	/* allocation type of current segment */
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned char alloc_type[MAX_ACTIVE_LOGS * 9];
+    unsigned char alloc_type[MAX_ACTIVE_LOGS * 8];
 #else
     unsigned char alloc_type[MAX_ACTIVE_LOGS];
 #endif
@@ -185,7 +185,11 @@ struct f2fs_checkpoint {
 	unsigned char sit_nat_version_bitmap[];
 } __packed;
 
+/* #ifdef CONFIG_F2FS_MULTI_STREAM */
+/* #define CP_CHKSUM_OFFSET	4092 + (MAX_ACTIVE_LOGS * 2 * sizeof(__le32) + sizeof(__le32))	/1* default chksum offset in checkpoint *1/ */
+/* #else */
 #define CP_CHKSUM_OFFSET	4092	/* default chksum offset in checkpoint */
+/* #endif */
 #define CP_MIN_CHKSUM_OFFSET						\
 	(offsetof(struct f2fs_checkpoint, sit_nat_version_bitmap))
 

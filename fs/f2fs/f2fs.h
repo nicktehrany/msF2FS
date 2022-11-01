@@ -1835,8 +1835,9 @@ struct f2fs_sb_info {
 #endif
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    atomic_t nr_streams;
-    atomic_t stream_ctrs[NO_CHECK_TYPE]; // TODO: fix handling of COLD_PINN it's same as cold don't need other entry for it
+    uint nr_max_streams;
+    atomic_t nr_active_streams;
+    atomic_t stream_ctrs[NR_CURSEG_TYPE]; // TODO: fix handling of COLD_PINN it's same as cold don't need other entry for it
 #endif
 };
 
@@ -3845,8 +3846,8 @@ struct f2fs_stat_info {
 	int tot_blks, data_blks, node_blks;
 	int bg_data_blks, bg_node_blks;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    int active_logs; /* user specified maximum active streams */
-    int nr_streams; /* currently active streams */
+    int nr_max_streams; /* user specified maximum active streams */
+    int nr_active_streams; /* currently active streams */
 	int curseg[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
 	int cursec[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
 	int curzone[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];

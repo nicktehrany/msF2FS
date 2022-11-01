@@ -100,6 +100,7 @@ enum {
 	Opt_acl,
 	Opt_noacl,
 	Opt_active_logs,
+    Opt_streams,
 	Opt_disable_ext_identify,
 	Opt_inline_xattr,
 	Opt_noinline_xattr,
@@ -175,6 +176,7 @@ static match_table_t f2fs_tokens = {
 	{Opt_acl, "acl"},
 	{Opt_noacl, "noacl"},
 	{Opt_active_logs, "active_logs=%u"},
+	{Opt_streams, "streams=%u"},
 	{Opt_disable_ext_identify, "disable_ext_identify"},
 	{Opt_inline_xattr, "inline_xattr"},
 	{Opt_noinline_xattr, "noinline_xattr"},
@@ -766,15 +768,20 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
 #ifdef CONFIG_F2FS_MULTI_STREAM
+            f2fs_info(sbi, "active_logs not supported");
+            break;
+        case Opt_streams:
             if (arg > MAX_ACTIVE_LOGS)
                 return -EINVAL;
+            sbi->nr_max_streams = arg;
+            break;
 #else
 			if (arg != 2 && arg != 4 &&
 				arg != NR_CURSEG_PERSIST_TYPE)
 				return -EINVAL;
+            F2FS_OPTION(sbi).active_logs = arg;
+            break;
 #endif
-			F2FS_OPTION(sbi).active_logs = arg;
-			break;
 		case Opt_disable_ext_identify:
 			set_opt(sbi, DISABLE_EXT_IDENTIFY);
 			break;
@@ -2001,19 +2008,25 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 	return 0;
 }
 
-static void default_options(struct f2fs_sb_info *sbi)
-{
+
 #ifdef CONFIG_F2FS_MULTI_STREAM
+static int init_multi_stream_info(struct f2fs_sb_info *sbi)
+{
     int i;
 
-    atomic_set(&sbi->nr_streams, 0);
+    atomic_set(&sbi->nr_active_streams, 0);
 
     for (i = CURSEG_HOT_DATA; i < NR_CURSEG_TYPE; i++) 
     {
         atomic_set(&sbi->stream_ctrs[i], 0);
     }
+
+    return 1;
+}
 #endif
 
+static void default_options(struct f2fs_sb_info *sbi)
+{
 	/* init some FS parameters */
 	if (f2fs_sb_has_readonly(sbi))
 		F2FS_OPTION(sbi).active_logs = NR_CURSEG_RO_TYPE;
@@ -4114,7 +4127,12 @@ try_onemore:
 	init_f2fs_rwsem(&sbi->cp_rwsem);
 	init_f2fs_rwsem(&sbi->quota_sem);
 	init_waitqueue_head(&sbi->cp_wait);
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
 	init_sb_info(sbi);
+#endif
+
+    init_multi_stream_info(sbi);
 
 	err = f2fs_init_iostat(sbi);
 	if (err)
@@ -4154,6 +4172,14 @@ try_onemore:
 		f2fs_err(sbi, "Failed to get valid F2FS checkpoint");
 		goto free_meta_inode;
 	}
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    if (sbi->nr_max_streams > le32_to_cpu(sbi->ckpt->nr_max_streams))
+    {
+        f2fs_info(sbi, "Using number of streams setting found in checkpoint: %u\n", le32_to_cpu(sbi->ckpt->nr_max_streams));
+        sbi->nr_max_streams = le32_to_cpu(sbi->ckpt->nr_max_streams);
+    }
+#endif
 
 	if (__is_set_ckpt_flags(F2FS_CKPT(sbi), CP_QUOTA_NEED_FSCK_FLAG))
 		set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
