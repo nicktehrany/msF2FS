@@ -152,11 +152,11 @@ struct f2fs_checkpoint {
 	/* information of current node segments */
 #ifdef CONFIG_F2FS_MULTI_STREAM
     __le32 nr_max_streams;
-	__le32 cur_node_segno[MAX_ACTIVE_LOGS * 6];
-	__le16 cur_node_blkoff[MAX_ACTIVE_LOGS * 6];
+	__le32 cur_node_segno[MAX_ACTIVE_LOGS * 3]; /* 3 for each type hot/warm/cold */
+	__le16 cur_node_blkoff[MAX_ACTIVE_LOGS * 3];
 	/* information of current data segments */
-	__le32 cur_data_segno[MAX_ACTIVE_LOGS * 6];
-	__le16 cur_data_blkoff[MAX_ACTIVE_LOGS * 6];
+	__le32 cur_data_segno[MAX_ACTIVE_LOGS * 3];
+	__le16 cur_data_blkoff[MAX_ACTIVE_LOGS * 3];
 #else
 	__le32 cur_node_segno[MAX_ACTIVE_NODE_LOGS];
 	__le16 cur_node_blkoff[MAX_ACTIVE_NODE_LOGS];
@@ -176,7 +176,11 @@ struct f2fs_checkpoint {
 	__le64 elapsed_time;		/* mounted time */
 	/* allocation type of current segment */
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned char alloc_type[MAX_ACTIVE_LOGS * 8];
+    /* TODO: Technically we only can only have a max for a stream of 11, if 
+     * all other streams are allocated only once, but if we change
+     * implementation to allow no stream for a type we can have more
+     * */
+    unsigned char alloc_type[MAX_ACTIVE_LOGS * MAX_ACTIVE_LOGS];
 #else
     unsigned char alloc_type[MAX_ACTIVE_LOGS];
 #endif

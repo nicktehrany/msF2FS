@@ -1445,6 +1445,9 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	struct curseg_info *seg_i = CURSEG_I(sbi, CURSEG_HOT_NODE);
 	u64 kbytes_written;
 	int err;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int streams, j;
+#endif
 
 	/* Flush all the NAT/SIT pages */
 	f2fs_sync_meta_pages(sbi, META, LONG_MAX, FS_CP_META_IO);
@@ -1452,6 +1455,31 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	/* start to update checkpoint, cp ver is already updated previously */
 	ckpt->elapsed_time = cpu_to_le64(get_mtime(sbi, true));
 	ckpt->free_segment_count = cpu_to_le32(free_segments(sbi));
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	for (i = 0; i < NR_CURSEG_NODE_TYPE; i++) {
+        streams = atomic_read(&sbi->stream_ctrs[i]);
+        for (j = 0; j < streams; j++) {
+		ckpt->cur_node_segno[j * NR_CURSEG_NODE_TYPE + i] =
+			cpu_to_le32(curseg_segno_at(sbi, i + CURSEG_HOT_NODE, j));
+		ckpt->cur_node_blkoff[j * NR_CURSEG_NODE_TYPE + i] =
+			cpu_to_le32(curseg_blkoff_at(sbi, i + CURSEG_HOT_NODE, j));
+		ckpt->alloc_type[j * NR_CURSEG_NODE_TYPE + i + CURSEG_HOT_NODE] =
+			cpu_to_le32(curseg_alloc_type_at(sbi, i + CURSEG_HOT_NODE, j));
+        }
+    }
+	for (i = 0; i < NR_CURSEG_DATA_TYPE; i++) {
+        streams = atomic_read(&sbi->stream_ctrs[i]);
+        for (j = 0; j < streams; j++) {
+		ckpt->cur_data_segno[j * NR_CURSEG_DATA_TYPE + i] =
+			cpu_to_le32(curseg_segno_at(sbi, i + CURSEG_HOT_DATA, j));
+		ckpt->cur_data_blkoff[j * NR_CURSEG_NODE_TYPE + i] =
+			cpu_to_le32(curseg_blkoff_at(sbi, i + CURSEG_HOT_DATA, j));
+		ckpt->alloc_type[j * NR_CURSEG_NODE_TYPE + i] =
+			cpu_to_le32(curseg_alloc_type_at(sbi, i + CURSEG_HOT_DATA, j));
+        }
+    }
+#else
 	for (i = 0; i < NR_CURSEG_NODE_TYPE; i++) {
 		ckpt->cur_node_segno[i] =
 			cpu_to_le32(curseg_segno(sbi, i + CURSEG_HOT_NODE));
@@ -1468,6 +1496,7 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 		ckpt->alloc_type[i + CURSEG_HOT_DATA] =
 				curseg_alloc_type(sbi, i + CURSEG_HOT_DATA);
 	}
+#endif
 
 	/* 2 cp + n data seg summary + orphan inode blocks */
 	data_sum_blocks = f2fs_npages_for_summary_flush(sbi, false);
@@ -1483,13 +1512,27 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 			orphan_blocks);
 
 	if (__remain_node_summaries(cpc->reason))
+#ifdef CONFIG_F2FS_MULTI_STREAM
+		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
+				cp_payload_blks + data_sum_blocks +
+				orphan_blocks + NR_CURSEG_NODE_TYPE * NR_CURSEG_TYPE * 
+                atomic_read(&sbi->nr_active_streams));
+#else
 		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
 				cp_payload_blks + data_sum_blocks +
 				orphan_blocks + NR_CURSEG_NODE_TYPE);
+#endif
 	else
+#ifdef CONFIG_F2FS_MULTI_STREAM
+		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
+				cp_payload_blks + data_sum_blocks +
+				orphan_blocks + NR_CURSEG_DATA_TYPE * 
+                atomic_read(&sbi->nr_active_streams));
+#else
 		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
 				cp_payload_blks + data_sum_blocks +
 				orphan_blocks);
+#endif
 
 	/* update ckpt flag for checkpoint */
 	update_ckpt_flags(sbi, cpc);

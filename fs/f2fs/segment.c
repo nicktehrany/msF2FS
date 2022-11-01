@@ -2369,6 +2369,33 @@ static void write_sum_page(struct f2fs_sb_info *sbi,
 	f2fs_update_meta_page(sbi, (void *)sum_blk, blk_addr);
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static void write_current_sum_page_at_stream(struct f2fs_sb_info *sbi,
+						int type, block_t blk_addr, int stream)
+{
+	struct curseg_info *curseg = CURSEG_I_AT(sbi, type, stream);
+	struct page *page = f2fs_grab_meta_page(sbi, blk_addr);
+	struct f2fs_summary_block *src = curseg->sum_blk;
+	struct f2fs_summary_block *dst;
+
+	dst = (struct f2fs_summary_block *)page_address(page);
+	memset(dst, 0, PAGE_SIZE);
+
+	mutex_lock(&curseg->curseg_mutex);
+
+	down_read(&curseg->journal_rwsem);
+	memcpy(&dst->journal, curseg->journal, SUM_JOURNAL_SIZE);
+	up_read(&curseg->journal_rwsem);
+
+	memcpy(dst->entries, src->entries, SUM_ENTRY_SIZE);
+	memcpy(&dst->footer, &src->footer, SUM_FOOTER_SIZE);
+
+	mutex_unlock(&curseg->curseg_mutex);
+
+	set_page_dirty(page);
+	f2fs_put_page(page, 1);
+}
+#else
 static void write_current_sum_page(struct f2fs_sb_info *sbi,
 						int type, block_t blk_addr)
 {
@@ -2394,6 +2421,7 @@ static void write_current_sum_page(struct f2fs_sb_info *sbi,
 	set_page_dirty(page);
 	f2fs_put_page(page, 1);
 }
+#endif
 
 static int is_next_segment_free(struct f2fs_sb_info *sbi,
 				struct curseg_info *curseg, int type)
@@ -3898,14 +3926,30 @@ static void write_normal_summaries(struct f2fs_sb_info *sbi,
 					block_t blkaddr, int type)
 {
 	int i, end;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int streams, j;
+#endif
 
 	if (IS_DATASEG(type))
 		end = type + NR_CURSEG_DATA_TYPE;
 	else
 		end = type + NR_CURSEG_NODE_TYPE;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    for (i = type; i < end; i++)
+    { 
+        streams = atomic_read(&sbi->stream_ctrs[i]);
+
+        for (j = 0; j < streams; j++)
+        {
+            f2fs_info(sbi, "Write page for <type stream>: <%u %u>", type, streams);
+            write_current_sum_page_at_stream(sbi, i, blkaddr + (i - type), j);
+        }
+    }
+#else
 	for (i = type; i < end; i++)
 		write_current_sum_page(sbi, i, blkaddr + (i - type));
+#endif
 }
 
 void f2fs_write_data_summaries(struct f2fs_sb_info *sbi, block_t start_blk)

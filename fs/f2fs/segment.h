@@ -711,6 +711,15 @@ enum {
 	F2FS_IPU_HONOR_OPU_WRITE,
 };
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned int curseg_segno_at(struct f2fs_sb_info *sbi,
+		int type, int stream)
+{
+	struct curseg_info *curseg = CURSEG_I_AT(sbi, type, stream);
+	return curseg->segno;
+}
+#endif
+
 static inline unsigned int curseg_segno(struct f2fs_sb_info *sbi,
 		int type)
 {
@@ -718,12 +727,30 @@ static inline unsigned int curseg_segno(struct f2fs_sb_info *sbi,
 	return curseg->segno;
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned char curseg_alloc_type_at(struct f2fs_sb_info *sbi,
+		int type, int stream)
+{
+	struct curseg_info *curseg = CURSEG_I_AT(sbi, type, stream);
+	return curseg->alloc_type;
+}
+#endif
+
 static inline unsigned char curseg_alloc_type(struct f2fs_sb_info *sbi,
 		int type)
 {
 	struct curseg_info *curseg = CURSEG_I(sbi, type);
 	return curseg->alloc_type;
 }
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned short curseg_blkoff_at(struct f2fs_sb_info *sbi, int type,
+        int stream)
+{
+	struct curseg_info *curseg = CURSEG_I_AT(sbi, type, stream);
+	return curseg->next_blkoff;
+}
+#endif
 
 static inline unsigned short curseg_blkoff(struct f2fs_sb_info *sbi, int type)
 {

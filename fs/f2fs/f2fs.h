@@ -180,6 +180,9 @@ struct f2fs_mount_info {
 	int compress_mode;			/* compression mode */
 	unsigned char extensions[COMPRESS_EXT_NUM][F2FS_EXTENSION_LEN];	/* extensions */
 	unsigned char noextensions[COMPRESS_EXT_NUM][F2FS_EXTENSION_LEN]; /* extensions */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    uint nr_max_streams;
+#endif
 };
 
 #define F2FS_FEATURE_ENCRYPT		0x0001

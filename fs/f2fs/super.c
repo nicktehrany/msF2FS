@@ -771,9 +771,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
             f2fs_info(sbi, "active_logs not supported");
             break;
         case Opt_streams:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
             if (arg > MAX_ACTIVE_LOGS)
                 return -EINVAL;
-            sbi->nr_max_streams = arg;
+            F2FS_OPTION(sbi).nr_max_streams = arg;
             break;
 #else
 			if (arg != 2 && arg != 4 &&
@@ -1937,6 +1939,9 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 	else if (F2FS_OPTION(sbi).fs_mode == FS_MODE_FRAGMENT_BLK)
 		seq_puts(seq, "fragment:block");
 	seq_printf(seq, ",active_logs=%u", F2FS_OPTION(sbi).active_logs);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	seq_printf(seq, ",streams=%u", F2FS_OPTION(sbi).nr_max_streams);
+#endif
 	if (test_opt(sbi, RESERVE_ROOT))
 		seq_printf(seq, ",reserve_root=%u,resuid=%u,resgid=%u",
 				F2FS_OPTION(sbi).root_reserved_blocks,
@@ -2032,6 +2037,10 @@ static void default_options(struct f2fs_sb_info *sbi)
 		F2FS_OPTION(sbi).active_logs = NR_CURSEG_RO_TYPE;
 	else
 		F2FS_OPTION(sbi).active_logs = NR_CURSEG_PERSIST_TYPE;
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    F2FS_OPTION(sbi).nr_max_streams = NR_CURSEG_PERSIST_TYPE;
+#endif
 
 	F2FS_OPTION(sbi).inline_xattr_size = DEFAULT_INLINE_XATTR_ADDRS;
 	F2FS_OPTION(sbi).alloc_mode = ALLOC_MODE_DEFAULT;
@@ -3625,6 +3634,10 @@ static void init_sb_info(struct f2fs_sb_info *sbi)
 	for (i = 0; i < META; i++)
 		atomic_set(&sbi->wb_sync_req[i], 0);
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    sbi->nr_max_streams = F2FS_OPTION(sbi).nr_max_streams;
+#endif
+
 	INIT_LIST_HEAD(&sbi->s_list);
 	mutex_init(&sbi->umount_mutex);
 	init_f2fs_rwsem(&sbi->io_order_lock);
@@ -4127,12 +4140,11 @@ try_onemore:
 	init_f2fs_rwsem(&sbi->cp_rwsem);
 	init_f2fs_rwsem(&sbi->quota_sem);
 	init_waitqueue_head(&sbi->cp_wait);
-
+    init_sb_info(sbi);
+    
 #ifdef CONFIG_F2FS_MULTI_STREAM
-	init_sb_info(sbi);
-#endif
-
     init_multi_stream_info(sbi);
+#endif
 
 	err = f2fs_init_iostat(sbi);
 	if (err)
@@ -4173,13 +4185,14 @@ try_onemore:
 		goto free_meta_inode;
 	}
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    if (sbi->nr_max_streams > le32_to_cpu(sbi->ckpt->nr_max_streams))
-    {
-        f2fs_info(sbi, "Using number of streams setting found in checkpoint: %u\n", le32_to_cpu(sbi->ckpt->nr_max_streams));
-        sbi->nr_max_streams = le32_to_cpu(sbi->ckpt->nr_max_streams);
-    }
-#endif
+/* #ifdef CONFIG_F2FS_MULTI_STREAM */
+/*     if (sbi->nr_max_streams != le32_to_cpu(sbi->ckpt->nr_max_streams)) */
+/*     { */
+/*         // TODO we want to use the same, just update ckpt to have new max_streams */
+/*         /1* f2fs_info(sbi, "Using number of streams setting found in checkpoint: %u\n", le32_to_cpu(sbi->ckpt->nr_max_streams)); *1/ */
+/*         /1* sbi->nr_max_streams = le32_to_cpu(sbi->ckpt->nr_max_streams); *1/ */
+/*     } */
+/* #endif */
 
 	if (__is_set_ckpt_flags(F2FS_CKPT(sbi), CP_QUOTA_NEED_FSCK_FLAG))
 		set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
