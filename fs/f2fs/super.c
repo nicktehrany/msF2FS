@@ -2015,7 +2015,7 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static int init_multi_stream_info(struct f2fs_sb_info *sbi)
+static int init_f2fs_multi_stream_info(struct f2fs_sb_info *sbi)
 {
     int i;
 
@@ -4143,7 +4143,7 @@ try_onemore:
     init_sb_info(sbi);
     
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    init_multi_stream_info(sbi);
+    init_f2fs_multi_stream_info(sbi);
 #endif
 
 	err = f2fs_init_iostat(sbi);

@@ -150,20 +150,21 @@ struct f2fs_checkpoint {
 	__le32 free_segment_count;	/* # of free segments in main area */
 
 	/* information of current node segments */
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    __le32 nr_max_streams;
-	__le32 cur_node_segno[MAX_ACTIVE_LOGS * 3]; /* 3 for each type hot/warm/cold */
-	__le16 cur_node_blkoff[MAX_ACTIVE_LOGS * 3];
-	/* information of current data segments */
-	__le32 cur_data_segno[MAX_ACTIVE_LOGS * 3];
-	__le16 cur_data_blkoff[MAX_ACTIVE_LOGS * 3];
-#else
+    /* TODO WITH THIS CHECKPOITN DOESN'T FIT INTO A PAGE */
+/* #ifdef CONFIG_F2FS_MULTI_STREAM */
+/*     __le32 nr_max_streams; */
+/* 	__le32 cur_node_segno[MAX_ACTIVE_LOGS * 3]; /1* 3 for each type hot/warm/cold *1/ */
+/* 	__le16 cur_node_blkoff[MAX_ACTIVE_LOGS * 3]; */
+/* 	/1* information of current data segments *1/ */
+/* 	__le32 cur_data_segno[MAX_ACTIVE_LOGS * 3]; */
+/* 	__le16 cur_data_blkoff[MAX_ACTIVE_LOGS * 3]; */
+/* #else */
 	__le32 cur_node_segno[MAX_ACTIVE_NODE_LOGS];
 	__le16 cur_node_blkoff[MAX_ACTIVE_NODE_LOGS];
 	/* information of current data segments */
 	__le32 cur_data_segno[MAX_ACTIVE_DATA_LOGS];
 	__le16 cur_data_blkoff[MAX_ACTIVE_DATA_LOGS];
-#endif
+/* #endif */
 	__le32 ckpt_flags;		/* Flags : umount and journal_present */
 	__le32 cp_pack_total_block_count;	/* total # of one cp pack */
 	__le32 cp_pack_start_sum;	/* start block number of data summary */
@@ -175,25 +176,17 @@ struct f2fs_checkpoint {
 	__le32 checksum_offset;		/* checksum offset inside cp block */
 	__le64 elapsed_time;		/* mounted time */
 	/* allocation type of current segment */
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    /* TODO: Technically we only can only have a max for a stream of 11, if 
-     * all other streams are allocated only once, but if we change
-     * implementation to allow no stream for a type we can have more
-     * */
-    unsigned char alloc_type[MAX_ACTIVE_LOGS * MAX_ACTIVE_LOGS];
-#else
+/* #ifdef CONFIG_F2FS_MULTI_STREAM */
+/*     unsigned char alloc_type[MAX_ACTIVE_LOGS * 8]; */
+/* #else */
     unsigned char alloc_type[MAX_ACTIVE_LOGS];
-#endif
+/* #endif */
 
 	/* SIT and NAT version bitmap */
 	unsigned char sit_nat_version_bitmap[];
 } __packed;
 
-/* #ifdef CONFIG_F2FS_MULTI_STREAM */
-/* #define CP_CHKSUM_OFFSET	4092 + (MAX_ACTIVE_LOGS * 2 * sizeof(__le32) + sizeof(__le32))	/1* default chksum offset in checkpoint *1/ */
-/* #else */
 #define CP_CHKSUM_OFFSET	4092	/* default chksum offset in checkpoint */
-/* #endif */
 #define CP_MIN_CHKSUM_OFFSET						\
 	(offsetof(struct f2fs_checkpoint, sit_nat_version_bitmap))
 

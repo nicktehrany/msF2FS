@@ -154,20 +154,21 @@ config F2FS_UNFAIR_RWSEM
 config F2FS_MULTI_STREAM
     bool "F2FS multiple concurrent streams per log type (EXPERIMENTAL)"
     depends on F2FS_FS 
-    select F2FS_MULTI_STREAM_RR
+    select F2FS_MULTI_STREAM_FF
     help
         Experimental implementation that, instead of using 3 data logs 
         (hot/warm/cold) and 3 node logs (hot/warm/cold), it allows using
         multiple streams for each log type. A total up to 16 collective
         (for all types) streams is supported. 
 
-config F2FS_MULTI_STREAM_RR
-    bool "Round Robin Stream Allocation"
+config F2FS_MULTI_STREAM_FF
+    bool "First Fit Stream Allocation"
     depends on F2FS_MULTI_STREAM
     default y
     help
-        Use Round Robin allocation for data into streams of a log type. 
-        Opens new streams, independent of type, up to the configured maximum 
-        number of concurrent streams (default 16 unless specified otherwise 
-        at mount with active_logs=x). If maximum is reached, writes data in 
-        LFS manner into the next idle segment in RR fashion.
+        Use First Fit allocation for data into streams of a log type. Iterate
+        over available streams for a type, select the first one that is idle
+        and has enough space to fit the data. A new stream is opened if the 
+        total number of active streams, for all types, has not reached the
+        maximum configured number of active streams. If no stream can be opened
+        the first stream is selected.
