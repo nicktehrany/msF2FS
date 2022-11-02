@@ -36,6 +36,7 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 #define IS_WARM(t)	((t) == CURSEG_WARM_NODE || (t) == CURSEG_WARM_DATA)
 #define IS_COLD(t)	((t) == CURSEG_COLD_NODE || (t) == CURSEG_COLD_DATA)
 
+#ifndef CONFIG_F2FS_MULTI_STREAM
 #define IS_CURSEG(sbi, seg)						\
 	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
@@ -63,6 +64,7 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	  (sbi)->segs_per_sec) ||	\
 	 ((secno) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno /	\
 	  (sbi)->segs_per_sec))
+#endif
 
 #define MAIN_BLKADDR(sbi)						\
 	(SM_I(sbi) ? SM_I(sbi)->main_blkaddr : 				\
@@ -340,6 +342,40 @@ static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
+{
+    int stream, type;
+    int active_streams = atomic_read(&sbi->nr_active_streams);
+
+    for (stream = 0; stream < active_streams; stream++) {
+        for (type = 0; type < NR_CURSEG_TYPE; type++) {
+            if (segno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno)) 
+                return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
+{
+    int stream, type;
+    int active_streams = atomic_read(&sbi->nr_active_streams);
+
+    for (stream = 0; stream < active_streams; stream++) {
+        for (type = 0; type < NR_CURSEG_TYPE; type++) {
+            if (secno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno / 
+                        sbi->segs_per_sec)) 
+                return 1;
+        }
+    }
+
+    return 0;
+}
+#endif
+
+
 static inline struct seg_entry *get_seg_entry(struct f2fs_sb_info *sbi,
 						unsigned int segno)
 {
@@ -438,7 +474,7 @@ static inline void seg_info_to_raw_sit(struct seg_entry *se,
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static inline unsigned int find_and_set_inuse_next_free_section(struct free_segmap_info *free_i,
+static inline unsigned int find_next_free_section(struct free_segmap_info *free_i,
         unsigned int max)
 {
 	unsigned int secno;

@@ -65,6 +65,10 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 	struct f2fs_stat_info *si = F2FS_STAT(sbi);
 	struct f2fs_super_block *raw_super = F2FS_RAW_SUPER(sbi);
 	int i;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int j;
+    struct curseg_info *curseg; 
+#endif
 
 	/* these will be changed if online resize is done */
 	si->main_area_segs = le32_to_cpu(raw_super->segment_count_main);
@@ -175,19 +179,13 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_F2FS_MULTI_STREAM
     si->nr_max_streams = sbi->nr_max_streams;
     si->nr_active_streams = atomic_read(&sbi->nr_active_streams);
-    for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_NODE; i++) {
-        int streams = atomic_read(&sbi->stream_ctrs[i]);
-        int j;
-        struct curseg_info *curseg; 
-
-        for (j = 0; j < streams; j++)
-        {
-            curseg = CURSEG_I(sbi, j* NR_CURSEG_TYPE + i);
-            si->curseg[i * j + i] = curseg->segno;
-            si->cursec[i * j + i] = GET_SEC_FROM_SEG(sbi, curseg->segno);
-            si->curzone[i * j + i] = GET_ZONE_FROM_SEC(sbi, si->cursec[i]);
+    for (i = 0; i < sbi->nr_max_streams; i++) {
+        for (j = CURSEG_HOT_DATA; j < NR_CURSEG_TYPE; j++) {
+            curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + j);
+            si->curseg[i * NR_CURSEG_TYPE + j] = curseg->segno;
+            si->cursec[i * NR_CURSEG_TYPE + j] = GET_SEC_FROM_SEG(sbi, curseg->segno);
+            si->curzone[i * NR_CURSEG_TYPE + j] = GET_ZONE_FROM_SEC(sbi, si->cursec[i * NR_CURSEG_TYPE + j]);
         }
-
     }
 #else
     for (i = CURSEG_HOT_DATA; i < NO_CHECK_TYPE; i++) {
@@ -432,62 +430,62 @@ static int stat_show(struct seq_file *s, void *v)
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_DATA]); i++)
         {
             seq_printf(s, "  - HOT  data:  %4d %8d %8d %8d %10u %10u %10u\n",
-                    i, si->curseg[CURSEG_HOT_DATA],
-                    si->cursec[CURSEG_HOT_DATA],
-                    si->curzone[CURSEG_HOT_DATA],
-                    si->dirty_seg[CURSEG_HOT_DATA],
-                    si->full_seg[CURSEG_HOT_DATA],
-                    si->valid_blks[CURSEG_HOT_DATA]);
+                    i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
+                    si->cursec[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
+                    si->curzone[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
+                    si->dirty_seg[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
+                    si->full_seg[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
+                    si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA]);
         }
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_DATA]); i++)
         {
 		seq_printf(s, "  - WARM data:  %4d %8d %8d %8d %10u %10u %10u\n",
-			   i, si->curseg[CURSEG_WARM_DATA],
-			   si->cursec[CURSEG_WARM_DATA],
-			   si->curzone[CURSEG_WARM_DATA],
-			   si->dirty_seg[CURSEG_WARM_DATA],
-			   si->full_seg[CURSEG_WARM_DATA],
-			   si->valid_blks[CURSEG_WARM_DATA]);
+			   i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
+			   si->cursec[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
+			   si->curzone[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
+			   si->dirty_seg[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
+			   si->full_seg[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
+			   si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA]);
         }
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_DATA]); i++)
         {
             seq_printf(s, "  - COLD data:  %4d %8d %8d %8d %10u %10u %10u\n",
-                    i, si->curseg[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
-                    si->cursec[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
-                    si->curzone[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
-                    si->dirty_seg[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
-                    si->full_seg[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA],
-                    si->valid_blks[i * CURSEG_COLD_DATA + CURSEG_COLD_DATA]);
+                    i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
+                    si->cursec[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
+                    si->curzone[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
+                    si->dirty_seg[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
+                    si->full_seg[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
+                    si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA]);
         }
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_NODE]); i++)
         {
             seq_printf(s, "  - HOT  node:  %4d %8d %8d %8d %10u %10u %10u\n",
-                    i, si->curseg[CURSEG_HOT_NODE],
-                    si->cursec[CURSEG_HOT_NODE],
-                    si->curzone[CURSEG_HOT_NODE],
-                    si->dirty_seg[CURSEG_HOT_NODE],
-                    si->full_seg[CURSEG_HOT_NODE],
-                    si->valid_blks[CURSEG_HOT_NODE]);
+                    i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
+                    si->cursec[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
+                    si->curzone[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
+                    si->dirty_seg[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
+                    si->full_seg[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
+                    si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE]);
         }
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_NODE]); i++)
         {
 		seq_printf(s, "  - WARM node:  %4d %8d %8d %8d %10u %10u %10u\n",
-			   i, si->curseg[CURSEG_WARM_NODE],
-			   si->cursec[CURSEG_WARM_NODE],
-			   si->curzone[CURSEG_WARM_NODE],
-			   si->dirty_seg[CURSEG_WARM_NODE],
-			   si->full_seg[CURSEG_WARM_NODE],
-			   si->valid_blks[CURSEG_WARM_NODE]);
+			   i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
+			   si->cursec[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
+			   si->curzone[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
+			   si->dirty_seg[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
+			   si->full_seg[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
+			   si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE]);
         }
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_NODE]); i++)
         {
             seq_printf(s, "  - COLD node:  %4d %8d %8d %8d %10u %10u %10u\n",
-                    i, si->curseg[CURSEG_COLD_NODE],
-                    si->cursec[CURSEG_COLD_NODE],
-                    si->curzone[CURSEG_COLD_NODE],
-                    si->dirty_seg[CURSEG_COLD_NODE],
-                    si->full_seg[CURSEG_COLD_NODE],
-                    si->valid_blks[CURSEG_COLD_NODE]);
+                    i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
+                    si->cursec[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
+                    si->curzone[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
+                    si->dirty_seg[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
+                    si->full_seg[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
+                    si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE]);
         }
         seq_printf(s, "  - Pinned file:     %8d %8d %8d\n",
                 si->curseg[CURSEG_COLD_DATA_PINNED],

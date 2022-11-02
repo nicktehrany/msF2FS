@@ -2622,6 +2622,20 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
 	return curseg->segno;
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static unsigned int __get_next_section_segno(struct f2fs_sb_info *sbi, int type)
+{
+    struct free_segmap_info *free_i = FREE_I(sbi);
+    unsigned int secno;
+    unsigned int segno;
+
+    secno = find_next_free_section(free_i, sbi->total_sections);
+    segno = GET_SEG_FROM_SEC(sbi, secno);
+
+    return segno;
+}
+#endif
+
 /*
  * Allocate a current working segment.
  * This function always allocates a free segment in LFS manner.
@@ -2644,8 +2658,9 @@ static void new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec,
 	if (test_opt(sbi, NOHEAP))
 		dir = ALLOC_RIGHT;
 
-	segno = __get_next_segno(sbi, type);
-	get_new_segment(sbi, &segno, new_sec, dir);
+    segno = __get_next_segno(sbi, type);
+
+    get_new_segment(sbi, &segno, new_sec, dir);
 	curseg->next_segno = segno;
 	reset_curseg(sbi, type, 1, stream);
 	curseg->alloc_type = LFS;
@@ -3178,7 +3193,7 @@ unlock:
 static void __allocate_new_segment(struct f2fs_sb_info *sbi, int type,
 						bool new_sec, bool force, unsigned int stream)
 {
-	struct curseg_info *curseg = CURSEG_I(sbi, type);
+	struct curseg_info *curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
 	unsigned int old_segno;
 
 	if (!curseg->inited)
@@ -3553,39 +3568,21 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static unsigned int __get_and_set_next_section_segno(struct f2fs_sb_info *sbi, int type)
-{
-    struct free_segmap_info *free_i = FREE_I(sbi);
-    unsigned int secno;
-    unsigned int segno;
-
-    secno = find_and_set_inuse_next_free_section(free_i, sbi->total_sections);
-    segno = GET_SEG_FROM_SEC(sbi, secno);
-
-    spin_lock(&free_i->segmap_lock);
-    __set_inuse(sbi, segno);
-    spin_unlock(&free_i->segmap_lock);
-
-    return segno;
-}
-#endif
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
 static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi, 
         int type, bool *new_stream)
 {
     int nr_active_streams;
     int i = 0;
-    unsigned int segno;
     int streams = atomic_read(&sbi->stream_ctrs[type]);
+    struct curseg_info *curseg;
 
     // TODO: this currently never actually happens even if under concurrency, can we have better decision making to start new stream? based on iostats maybe?
     /* for (i = 0; i < streams; i++) */
     /* { */
-    /*     curseg = CURSEG_I_AT(sbi, type, i); */
+    /*     curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + type); */
     /*     if (!mutex_is_locked(&curseg->curseg_mutex)) /1* TODO: how can we get the size to check if has_curseg_enough_space *1/ */
     /*     { */
-    /*         return curseg; */
+    /*         return i; */
     /*     } */
     /* } */
 
@@ -3594,12 +3591,15 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
     if (nr_active_streams < sbi->nr_max_streams) {
         *new_stream = true;
 
+        f2fs_stream_info(sbi, "Alloc new stream for type: %u", type);
         return 0; 
     }
-   
-    f2fs_stream_info(sbi, "Cannot allocate new stream for type: %u", type);
 
-    /* return the curseg from the first stream */
+    /* 
+     * TODO: what will the default policy be? return first stream (return 0)
+     * or last allocated stream (return streams - 1) 
+     * or random (return prandom_u32() % (streams - 1)
+     */
     return 0;
 }
 #endif
@@ -3626,6 +3626,15 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
     // TODO: separate allocation and handling of stream so that we can easily
     // swap stream alloc policy that only need to return a stream number
     stream = __get_first_fit_policy_stream(sbi, type, &new_stream);
+
+    if (new_stream) {
+        // TODO lock streams info
+        __allocate_new_segment(sbi, type, new_stream, new_stream, 
+                atomic_read(&sbi->stream_ctrs[type]));
+        stream = atomic_inc_return(&sbi->stream_ctrs[type]) - 1;
+        atomic_inc(&sbi->nr_active_streams);
+    }
+
 	curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
 #endif
 
