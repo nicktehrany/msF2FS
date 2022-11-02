@@ -340,12 +340,28 @@ static inline struct curseg_info *CURSEG_I_AT(struct f2fs_sb_info *sbi, int type
 {
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + (stream * NR_CURSEG_TYPE + type));
 }
-#endif
 
+/* 
+ * Return the curseg in the last allocated stream for the type
+ * */
+static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
+{
+    int streams;
+
+    // TODO: this is hardcoded fix cause check_zone_write_pointer calls this, up to NO_CHECK_TYPE
+    // but that shouldn't really be an issue, still get's out of bounds
+    if (type > CURSEG_COLD_NODE)
+        return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
+
+    streams = atomic_read(&sbi->stream_ctrs[type]);
+	return (struct curseg_info *)(SM_I(sbi)->curseg_array + ((streams - 1) * NR_CURSEG_TYPE + type));
+}
+#else
 static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 {
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
 }
+#endif
 
 static inline struct seg_entry *get_seg_entry(struct f2fs_sb_info *sbi,
 						unsigned int segno)
@@ -443,6 +459,24 @@ static inline void seg_info_to_raw_sit(struct seg_entry *se,
 	memcpy(se->ckpt_valid_map, rs->valid_map, SIT_VBLOCK_MAP_SIZE);
 	se->ckpt_valid_blocks = se->valid_blocks;
 }
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned int find_and_set_inuse_next_free_section(struct free_segmap_info *free_i,
+        unsigned int max)
+{
+	unsigned int secno;
+
+	spin_lock(&free_i->segmap_lock);
+	secno = find_first_zero_bit(free_i->free_secmap, max);
+	set_bit(secno, free_i->free_secmap);
+	free_i->free_sections--;
+	if (!test_and_set_bit(secno, free_i->free_secmap))
+		free_i->free_sections--;
+	spin_unlock(&free_i->segmap_lock);
+
+	return secno;
+}
+#endif
 
 static inline unsigned int find_next_inuse(struct free_segmap_info *free_i,
 		unsigned int max, unsigned int segno)

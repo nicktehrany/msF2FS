@@ -3239,19 +3239,68 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-struct curseg_info *f2fs_allocate_new_segment_stream(struct f2fs_sb_info *sbi, int type)
+static unsigned int __get_and_set_next_section_segno(struct f2fs_sb_info *sbi, int type)
 {
-    if (atomic_read(&sbi->nr_active_streams) >= sbi->nr_max_streams)
-        return CURSEG_I(sbi, type);
-    else 
-    {
-        // TODO: locking and actual implementation
+    struct free_segmap_info *free_i = FREE_I(sbi);
+    unsigned int secno;
+    unsigned int segno;
+
+    secno = find_and_set_inuse_next_free_section(free_i, sbi->total_sections);
+    segno = GET_SEG_FROM_SEC(sbi, secno);
+
+    spin_lock(&free_i->segmap_lock);
+    __set_inuse(sbi, segno);
+    spin_unlock(&free_i->segmap_lock);
+
+    return segno;
+}
+
+struct curseg_info *f2fs_find_stream_candidate_or_allocate_new(struct f2fs_sb_info *sbi, int type)
+{
+    int nr_active_streams;
+    struct curseg_info *curseg;
+    int i = 0;
+    int dir = ALLOC_LEFT;
+    unsigned int segno;
+    int streams = atomic_read(&sbi->stream_ctrs[type]);
+
+    // TODO: this currently never actually happens even if under concurrency, can we have better decision making to start new stream? based on iostats maybe?
+    /* for (i = 0; i < streams; i++) */
+    /* { */
+    /*     curseg = CURSEG_I_AT(sbi, type, i); */
+    /*     if (!mutex_is_locked(&curseg->curseg_mutex)) /1* TODO: how can we get the size to check if has_curseg_enough_space *1/ */
+    /*     { */
+    /*         return curseg; */
+    /*     } */
+    /* } */
+
+    // TODO: this needs to be locked so that no other thread can create a new stream in between these statements
+    nr_active_streams = atomic_read(&sbi->nr_active_streams);
+    if (nr_active_streams < sbi->nr_max_streams) {
+        // TODO make this correct as in new_curseg
+        if (type == CURSEG_WARM_DATA || type == CURSEG_COLD_DATA)
+            dir = ALLOC_RIGHT;
+
+        if (test_opt(sbi, NOHEAP))
+            dir = ALLOC_RIGHT;
+
+        segno = __get_and_set_next_section_segno(sbi, type); // returns 3072 which is old seg, messes up things
+
         atomic_inc(&sbi->nr_active_streams);
         atomic_inc(&sbi->stream_ctrs[type]);
-        allocate_segment_by_default(sbi, type, 1); 
-    }
 
-    return CURSEG_I(sbi, type);
+        // TODO curseg_array doesn't have this yet
+        curseg = CURSEG_I_AT(sbi, type, i + 1);
+        f2fs_err(sbi, "got curseg with %u", curseg->segno);
+        stat_inc_seg_type(sbi, curseg);
+
+        return curseg;
+    }
+   
+    f2fs_stream_info(sbi, "Cannot allocate new stream for type: %u", type);
+
+    /* return the curseg from the first stream */
+	return CURSEG_I_AT(sbi, type, 0);
 }
 #endif
 
@@ -3271,7 +3320,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	struct seg_entry *se = NULL;
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    curseg = f2fs_allocate_new_segment_stream(sbi, type);
+    curseg = f2fs_find_stream_candidate_or_allocate_new(sbi, type);
 #endif
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);

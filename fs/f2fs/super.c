@@ -773,8 +773,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-            if (arg > MAX_ACTIVE_LOGS)
+            if (arg > MAX_ACTIVE_LOGS || arg < NR_CURSEG_PERSIST_TYPE)
+            {
+                f2fs_info(sbi, "Invalid Streams: %u must be at least 6 up to 16", arg);
                 return -EINVAL;
+            }
             F2FS_OPTION(sbi).nr_max_streams = arg;
             break;
 #else

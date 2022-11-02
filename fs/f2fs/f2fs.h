@@ -2360,6 +2360,8 @@ void f2fs_printk(struct f2fs_sb_info *sbi, const char *fmt, ...);
 	f2fs_printk(sbi, KERN_NOTICE fmt, ##__VA_ARGS__)
 #define f2fs_info(sbi, fmt, ...)					\
 	f2fs_printk(sbi, KERN_INFO fmt, ##__VA_ARGS__)
+#define f2fs_stream_info(sbi, fmt, ...)					\
+	f2fs_printk(sbi, KERN_INFO fmt, ##__VA_ARGS__)
 #define f2fs_debug(sbi, fmt, ...)					\
 	f2fs_printk(sbi, KERN_DEBUG fmt, ##__VA_ARGS__)
 
@@ -3849,6 +3851,7 @@ struct f2fs_stat_info {
 	int tot_blks, data_blks, node_blks;
 	int bg_data_blks, bg_node_blks;
 #ifdef CONFIG_F2FS_MULTI_STREAM
+    // TODO need a mutex for these ops
     int nr_max_streams; /* user specified maximum active streams */
     int nr_active_streams; /* currently active streams */
 	int curseg[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];
