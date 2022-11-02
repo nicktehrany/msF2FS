@@ -1953,7 +1953,11 @@ static int free_segment_range(struct f2fs_sb_info *sbi,
 
 	/* Move out cursegs from the target range */
 	for (type = CURSEG_HOT_DATA; type < NR_CURSEG_PERSIST_TYPE; type++)
+#ifdef CONFIG_F2FS_MULTI_STREAM
+		f2fs_allocate_segment_for_resize(sbi, type, start, end, 0); // TODO: Actual implementation for GC of streams
+#else
 		f2fs_allocate_segment_for_resize(sbi, type, start, end);
+#endif
 
 	/* do GC to move out valid blocks in the range */
 	for (segno = start; segno <= end; segno += sbi->segs_per_sec) {

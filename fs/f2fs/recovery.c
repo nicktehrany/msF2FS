@@ -788,8 +788,14 @@ next:
 
 		f2fs_ra_meta_pages_cond(sbi, blkaddr, ra_blocks);
 	}
+    
+    // TODO: hardcoding to first stream for now
 	if (!err)
+#ifdef CONFIG_F2FS_MULTI_STREAM
+		f2fs_allocate_new_segments(sbi, 0);
+#else
 		f2fs_allocate_new_segments(sbi);
+#endif
 	return err;
 }
 
@@ -863,7 +869,12 @@ skip:
 	 */
 	if (!err && fix_curseg_write_pointer && !f2fs_readonly(sbi->sb) &&
 			f2fs_sb_has_blkzoned(sbi)) {
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        // TODO: hardcoding to first stream for now
+		err = f2fs_fix_curseg_write_pointer(sbi, 0);
+#else
 		err = f2fs_fix_curseg_write_pointer(sbi);
+#endif
 		ret = err;
 	}
 

@@ -3615,10 +3615,21 @@ void f2fs_save_inmem_curseg(struct f2fs_sb_info *sbi);
 void f2fs_restore_inmem_curseg(struct f2fs_sb_info *sbi);
 void f2fs_get_new_segment(struct f2fs_sb_info *sbi,
 			unsigned int *newseg, bool new_sec, int dir);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+void f2fs_allocate_segment_for_resize(struct f2fs_sb_info *sbi, int type,
+					unsigned int start, unsigned int end, unsigned int stream);
+#else
 void f2fs_allocate_segment_for_resize(struct f2fs_sb_info *sbi, int type,
 					unsigned int start, unsigned int end);
+#endif
+#ifdef CONFIG_F2FS_MULTI_STREAM
+void f2fs_allocate_new_section(struct f2fs_sb_info *sbi, int type, bool force, 
+        unsigned int stream);
+void f2fs_allocate_new_segments(struct f2fs_sb_info *sbi, unsigned int stream);
+#else
 void f2fs_allocate_new_section(struct f2fs_sb_info *sbi, int type, bool force);
 void f2fs_allocate_new_segments(struct f2fs_sb_info *sbi);
+#endif
 int f2fs_trim_fs(struct f2fs_sb_info *sbi, struct fstrim_range *range);
 bool f2fs_exist_trim_candidates(struct f2fs_sb_info *sbi,
 					struct cp_control *cpc);
@@ -3655,7 +3666,11 @@ void f2fs_write_node_summaries(struct f2fs_sb_info *sbi, block_t start_blk);
 int f2fs_lookup_journal_in_cursum(struct f2fs_journal *journal, int type,
 			unsigned int val, int alloc);
 void f2fs_flush_sit_entries(struct f2fs_sb_info *sbi, struct cp_control *cpc);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+int f2fs_fix_curseg_write_pointer(struct f2fs_sb_info *sbi, unsigned int stream);
+#else
 int f2fs_fix_curseg_write_pointer(struct f2fs_sb_info *sbi);
+#endif
 int f2fs_check_write_pointer(struct f2fs_sb_info *sbi);
 int f2fs_build_segment_manager(struct f2fs_sb_info *sbi);
 void f2fs_destroy_segment_manager(struct f2fs_sb_info *sbi);

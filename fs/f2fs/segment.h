@@ -220,7 +220,11 @@ struct sec_entry {
 };
 
 struct segment_allocation {
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	void (*allocate_segment)(struct f2fs_sb_info *, int, bool, unsigned int);
+#else
 	void (*allocate_segment)(struct f2fs_sb_info *, int, bool);
+#endif
 };
 
 #define MAX_SKIP_GC_COUNT			16
@@ -331,37 +335,10 @@ struct sit_entry_set {
 /*
  * inline functions
  */
-#ifdef CONFIG_F2FS_MULTI_STREAM
-/* 
- * Return the curseg_info of type at a stream index
- */
-static inline struct curseg_info *CURSEG_I_AT(struct f2fs_sb_info *sbi, int type, 
-        int stream)
-{
-	return (struct curseg_info *)(SM_I(sbi)->curseg_array + (stream * NR_CURSEG_TYPE + type));
-}
-
-/* 
- * Return the curseg in the last allocated stream for the type
- * */
-static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
-{
-    int streams;
-
-    // TODO: this is hardcoded fix cause check_zone_write_pointer calls this, up to NO_CHECK_TYPE
-    // but that shouldn't really be an issue, still get's out of bounds
-    if (type > CURSEG_COLD_NODE)
-        return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
-
-    streams = atomic_read(&sbi->stream_ctrs[type]);
-	return (struct curseg_info *)(SM_I(sbi)->curseg_array + ((streams - 1) * NR_CURSEG_TYPE + type));
-}
-#else
 static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 {
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
 }
-#endif
 
 static inline struct seg_entry *get_seg_entry(struct f2fs_sb_info *sbi,
 						unsigned int segno)
@@ -733,7 +710,7 @@ enum {
 static inline unsigned int curseg_segno_at(struct f2fs_sb_info *sbi,
 		int type, int stream)
 {
-	struct curseg_info *curseg = CURSEG_I_AT(sbi, type, stream);
+	struct curseg_info *curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
 	return curseg->segno;
 }
 #endif
@@ -749,7 +726,7 @@ static inline unsigned int curseg_segno(struct f2fs_sb_info *sbi,
 static inline unsigned char curseg_alloc_type_at(struct f2fs_sb_info *sbi,
 		int type, int stream)
 {
-	struct curseg_info *curseg = CURSEG_I_AT(sbi, type, stream);
+	struct curseg_info *curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
 	return curseg->alloc_type;
 }
 #endif
@@ -765,7 +742,7 @@ static inline unsigned char curseg_alloc_type(struct f2fs_sb_info *sbi,
 static inline unsigned short curseg_blkoff_at(struct f2fs_sb_info *sbi, int type,
         int stream)
 {
-	struct curseg_info *curseg = CURSEG_I_AT(sbi, type, stream);
+	struct curseg_info *curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
 	return curseg->next_blkoff;
 }
 #endif

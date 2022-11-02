@@ -182,7 +182,7 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 
         for (j = 0; j < streams; j++)
         {
-            curseg = CURSEG_I_AT(sbi, i, j);
+            curseg = CURSEG_I(sbi, j* NR_CURSEG_TYPE + i);
             si->curseg[i * j + i] = curseg->segno;
             si->cursec[i * j + i] = GET_SEC_FROM_SEG(sbi, curseg->segno);
             si->curzone[i * j + i] = GET_ZONE_FROM_SEC(sbi, si->cursec[i]);
