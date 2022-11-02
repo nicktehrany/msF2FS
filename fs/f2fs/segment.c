@@ -3284,14 +3284,14 @@ struct curseg_info *f2fs_find_stream_candidate_or_allocate_new(struct f2fs_sb_in
         if (test_opt(sbi, NOHEAP))
             dir = ALLOC_RIGHT;
 
-        segno = __get_and_set_next_section_segno(sbi, type); // returns 3072 which is old seg, messes up things
+        segno = __get_and_set_next_section_segno(sbi, type);
 
         atomic_inc(&sbi->nr_active_streams);
         atomic_inc(&sbi->stream_ctrs[type]);
 
         // TODO curseg_array doesn't have this yet
         curseg = CURSEG_I_AT(sbi, type, i + 1);
-        f2fs_err(sbi, "got curseg with %u", curseg->segno);
+        f2fs_err(sbi, "got curseg with %u but segno %u", curseg->segno, segno);
         stat_inc_seg_type(sbi, curseg);
 
         return curseg;
@@ -4432,33 +4432,59 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 
 	SM_I(sbi)->curseg_array = array;
 
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		mutex_init(&array[i].curseg_mutex);
-		array[i].sum_blk = f2fs_kzalloc(sbi, PAGE_SIZE, GFP_KERNEL);
-		if (!array[i].sum_blk)
-			return -ENOMEM;
-		init_rwsem(&array[i].journal_rwsem);
-		array[i].journal = f2fs_kzalloc(sbi,
-				sizeof(struct f2fs_journal), GFP_KERNEL);
-		if (!array[i].journal)
-			return -ENOMEM;
-		if (i < NR_PERSISTENT_LOG)
-			array[i].seg_type = CURSEG_HOT_DATA + i;
-		else if (i == CURSEG_COLD_DATA_PINNED)
-			array[i].seg_type = CURSEG_COLD_DATA;
-		else if (i == CURSEG_ALL_DATA_ATGC)
-			array[i].seg_type = CURSEG_COLD_DATA;
-		array[i].segno = NULL_SEGNO;
-		array[i].next_blkoff = 0;
-		array[i].inited = false;
 #ifdef CONFIG_F2FS_MULTI_STREAM
+    /* Init all of the curseg_array, since we do not know how many
+     * we end up using. Therefore, sbi->stream_ctrs is only intialized
+     * for the default 1 stream per type (hot/warm/cold for data/node)
+     */
+    for (i = 0; i < NR_CURSEG_TYPE * MAX_ACTIVE_LOGS; i++) {
+        mutex_init(&array[i].curseg_mutex);
+        array[i].sum_blk = f2fs_kzalloc(sbi, PAGE_SIZE, GFP_KERNEL);
+        if (!array[i].sum_blk)
+            return -ENOMEM;
+        init_rwsem(&array[i].journal_rwsem);
+        array[i].journal = f2fs_kzalloc(sbi,
+                sizeof(struct f2fs_journal), GFP_KERNEL);
+        if (!array[i].journal)
+            return -ENOMEM;
+        if (i % NR_CURSEG_TYPE < NR_PERSISTENT_LOG)
+            array[i].seg_type = CURSEG_HOT_DATA + (i % NR_CURSEG_TYPE);
+        else if (i % NR_CURSEG_TYPE == CURSEG_COLD_DATA_PINNED)
+            array[i].seg_type = CURSEG_COLD_DATA;
+        else if (i % NR_CURSEG_TYPE == CURSEG_ALL_DATA_ATGC)
+            array[i].seg_type = CURSEG_COLD_DATA;
+        array[i].segno = NULL_SEGNO;
+        array[i].next_blkoff = 0;
+        array[i].inited = false;
         if (i < NR_PERSISTENT_LOG)
         {
             atomic_inc(&sbi->nr_active_streams);
             atomic_inc(&sbi->stream_ctrs[i]);
         }
+    }
+#else
+	for (i = 0; i < NO_CHECK_TYPE; i++) {
+        mutex_init(&array[i].curseg_mutex);
+        array[i].sum_blk = f2fs_kzalloc(sbi, PAGE_SIZE, GFP_KERNEL);
+        if (!array[i].sum_blk)
+            return -ENOMEM;
+        init_rwsem(&array[i].journal_rwsem);
+        array[i].journal = f2fs_kzalloc(sbi,
+                sizeof(struct f2fs_journal), GFP_KERNEL);
+        if (!array[i].journal)
+            return -ENOMEM;
+        if (i < NR_PERSISTENT_LOG)
+            array[i].seg_type = CURSEG_HOT_DATA + i;
+        else if (i == CURSEG_COLD_DATA_PINNED)
+            array[i].seg_type = CURSEG_COLD_DATA;
+        else if (i == CURSEG_ALL_DATA_ATGC)
+            array[i].seg_type = CURSEG_COLD_DATA;
+        array[i].segno = NULL_SEGNO;
+        array[i].next_blkoff = 0;
+        array[i].inited = false;
+    }
 #endif
-	}
+
 	return restore_curseg_summaries(sbi);
 }
 
