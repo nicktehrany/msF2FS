@@ -187,6 +187,27 @@ static void update_general_status(struct f2fs_sb_info *sbi)
             si->curzone[i * NR_CURSEG_TYPE + j] = GET_ZONE_FROM_SEC(sbi, si->cursec[i * NR_CURSEG_TYPE + j]);
         }
     }
+
+    for (i = 0; i < NO_CHECK_TYPE * MAX_ACTIVE_LOGS; i++) {
+        si->dirty_seg[i] = 0;
+        si->full_seg[i] = 0;
+        si->valid_blks[i] = 0;
+    }
+
+    for (i = 0; i < MAIN_SEGS(sbi); i++) {
+        int blks = get_seg_entry(sbi, i)->valid_blocks;
+        int type = get_seg_entry(sbi, i)->type;
+        int stream = get_seg_entry(sbi, i)->stream;
+
+        if (!blks)
+            continue;
+
+        if (blks == sbi->blocks_per_seg)
+            si->full_seg[stream * NR_CURSEG_TYPE + type]++;
+        else
+            si->dirty_seg[stream * NR_CURSEG_TYPE + type]++;
+        si->valid_blks[stream * NR_CURSEG_TYPE + type] += blks;
+    }
 #else
     for (i = CURSEG_HOT_DATA; i < NO_CHECK_TYPE; i++) {
         struct curseg_info *curseg = CURSEG_I(sbi, i);
@@ -195,35 +216,35 @@ static void update_general_status(struct f2fs_sb_info *sbi)
         si->cursec[i] = GET_SEC_FROM_SEG(sbi, curseg->segno);
         si->curzone[i] = GET_ZONE_FROM_SEC(sbi, si->cursec[i]);
     }
+
+    for (i = 0; i < NO_CHECK_TYPE; i++) {
+        si->dirty_seg[i] = 0;
+        si->full_seg[i] = 0;
+        si->valid_blks[i] = 0;
+    }
+
+    for (i = 0; i < MAIN_SEGS(sbi); i++) {
+        int blks = get_seg_entry(sbi, i)->valid_blocks;
+        int type = get_seg_entry(sbi, i)->type;
+
+        if (!blks)
+            continue;
+
+        if (blks == sbi->blocks_per_seg)
+            si->full_seg[type]++;
+        else
+            si->dirty_seg[type]++;
+        si->valid_blks[type] += blks;
+    }
 #endif
 
 	for (i = META_CP; i < META_MAX; i++)
 		si->meta_count[i] = atomic_read(&sbi->meta_count[i]);
 
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		si->dirty_seg[i] = 0;
-		si->full_seg[i] = 0;
-		si->valid_blks[i] = 0;
-	}
-
-	for (i = 0; i < MAIN_SEGS(sbi); i++) {
-		int blks = get_seg_entry(sbi, i)->valid_blocks;
-		int type = get_seg_entry(sbi, i)->type;
-
-		if (!blks)
-			continue;
-
-		if (blks == sbi->blocks_per_seg)
-			si->full_seg[type]++;
-		else
-			si->dirty_seg[type]++;
-		si->valid_blks[type] += blks;
-	}
-
-	for (i = 0; i < 2; i++) {
-		si->segment_count[i] = sbi->segment_count[i];
-		si->block_count[i] = sbi->block_count[i];
-	}
+    for (i = 0; i < 2; i++) {
+        si->segment_count[i] = sbi->segment_count[i];
+        si->block_count[i] = sbi->block_count[i];
+    }
 
 	si->inplace_count = atomic_read(&sbi->inplace_count);
 }

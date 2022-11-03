@@ -208,6 +208,9 @@ struct seg_entry {
 #ifdef CONFIG_F2FS_CHECK_FS
 	unsigned char *cur_valid_map_mir;	/* mirror of current valid bitmap */
 #endif
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream; /* stream id of the segment */
+#endif
 	/*
 	 * # of valid blocks and the validity bitmap stored in the last
 	 * checkpoint pack. This information is used by the SSR mode.
@@ -326,6 +329,9 @@ struct curseg_info {
 	unsigned int next_segno;		/* preallocated segment */
 	int fragment_remained_chunk;		/* remained block size in a chunk for block fragmentation mode */
 	bool inited;				/* indicate inmem log is inited */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream; /* stream id the segment is in */
+#endif
 };
 
 struct sit_entry_set {
