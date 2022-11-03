@@ -3569,11 +3569,12 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
 static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi, 
-        int type, bool *new_stream)
+        int type)
 {
     int nr_active_streams;
     int i = 0;
     int streams = atomic_read(&sbi->stream_ctrs[type]);
+    unsigned int stream;
     struct curseg_info *curseg;
 
     // TODO: this currently never actually happens even if under concurrency, can we have better decision making to start new stream? based on iostats maybe?
@@ -3589,7 +3590,12 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
     // TODO: this needs to be locked so that no other thread can create a new stream in between these statements
     nr_active_streams = atomic_read(&sbi->nr_active_streams);
     if (nr_active_streams < sbi->nr_max_streams) {
-        *new_stream = true;
+        __allocate_new_segment(sbi, type, true, true, 
+                atomic_read(&sbi->stream_ctrs[type]));
+
+        stream = atomic_inc_return(&sbi->stream_ctrs[type]) - 1;
+        atomic_inc(&sbi->nr_active_streams);
+        __set_inuse_stream(sbi, type, stream);
 
         f2fs_stream_info(sbi, "Alloc new stream for type: %u", type);
         return 0; 
@@ -3612,8 +3618,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	struct sit_info *sit_i = SIT_I(sbi);
 #ifdef CONFIG_F2FS_MULTI_STREAM
     struct curseg_info *curseg;
-    int stream;
-    bool new_stream = false;
+    unsigned int stream;
 #else
     struct curseg_info *curseg = CURSEG_I(sbi, type);
 #endif
@@ -3625,16 +3630,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
     // TODO: HERE we can decide on the allocation policy on new streams
     // TODO: separate allocation and handling of stream so that we can easily
     // swap stream alloc policy that only need to return a stream number
-    stream = __get_first_fit_policy_stream(sbi, type, &new_stream);
-
-    if (new_stream) {
-        // TODO lock streams info
-        __allocate_new_segment(sbi, type, new_stream, new_stream, 
-                atomic_read(&sbi->stream_ctrs[type]));
-        stream = atomic_inc_return(&sbi->stream_ctrs[type]) - 1;
-        atomic_inc(&sbi->nr_active_streams);
-    }
-
+    stream = __get_first_fit_policy_stream(sbi, type);
 	curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
 #endif
 
@@ -3687,12 +3683,15 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		update_sit_entry(sbi, old_blkaddr, -1);
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
+    // TODO: if no space we want to check other segments and return them so this always succeeds
+    // TODO: do we want to move the stream alloc to sit_i->s_ops->allocate_segment instead of manually
+    // calling it? we would remove this call anyways and only leave the get_assr_segment call
 	if (!__has_curseg_space(sbi, curseg)) {
 		if (from_gc)
 			get_atssr_segment(sbi, type, se->type,
 						AT_SSR, se->mtime, stream);
 		else
-			sit_i->s_ops->allocate_segment(sbi, type, new_stream, stream);
+			sit_i->s_ops->allocate_segment(sbi, type, false, stream);
 	}
 #else
 	if (!__has_curseg_space(sbi, curseg)) {
@@ -4898,6 +4897,8 @@ static int build_curseg(struct f2fs_sb_info *sbi)
         array[i].inited = false;
         if (i < NR_PERSISTENT_LOG)
         {
+            // TODO: streams vars need locking
+            __set_inuse_stream(sbi, i, 0);
             atomic_inc(&sbi->nr_active_streams);
             atomic_inc(&sbi->stream_ctrs[i]);
         }

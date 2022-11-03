@@ -425,6 +425,37 @@ static int stat_show(struct seq_file *s, void *v)
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_NODE]),
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_NODE]),
                 atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_NODE]));
+        seq_printf(s, "  - STREAM BITMAPS:\n");
+        for (i = 0; i < NR_CURSEG_PERSIST_TYPE; i++) {
+            switch (i) {
+                case 0:
+                    seq_printf(s, "       %s   [ ", "HOT_DATA");
+                    break;
+                case 1:
+                    seq_printf(s, "       %s  [ ", "WARM_DATA");
+                    break;
+                case 2:
+                    seq_printf(s, "       %s  [ ", "COLD_DATA");
+                    break;
+                case 3:
+                    seq_printf(s, "       %s   [ ", "HOT_NODE");
+                    break;
+                case 4:
+                    seq_printf(s, "       %s  [ ", "WAMR_NODE");
+                    break;
+                case 5:
+                    seq_printf(s, "       %s  [ ", "COLD_NODE");
+                    break;
+            }
+            for (j = 0; j < si->sbi->nr_max_streams; j++) {
+                if(__test_inuse_stream(si->sbi, i, j))
+                    seq_printf(s, "1 ");
+                else
+                    seq_printf(s, "0 ");
+
+            }
+            seq_printf(s, "]\n");
+        }
 		seq_printf(s, "\n    TYPE     %8s %8s %8s %8s %10s %10s %10s\n",
 			   "STREAM", "segno", "secno", "zoneno", "dirty_seg", "full_seg", "valid_blk");
         for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_DATA]); i++)

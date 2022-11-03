@@ -1514,6 +1514,17 @@ static void destroy_device_list(struct f2fs_sb_info *sbi)
 	kvfree(sbi->devs);
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static void f2fs_destroy_multi_stream_info(struct f2fs_sb_info *sbi)
+{
+	int i;
+
+	for (i = 0; i < NR_CURSEG_TYPE; i++)
+		kvfree(sbi->streammap[i]);
+	kvfree(sbi->streammap);
+}
+#endif
+
 static void f2fs_put_super(struct super_block *sb)
 {
 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
@@ -2018,18 +2029,31 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static int init_f2fs_multi_stream_info(struct f2fs_sb_info *sbi)
+static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 {
-    int i;
+    int i, j;
+
+    sbi->streammap = f2fs_kvzalloc(sbi, NR_CURSEG_TYPE * sizeof(unsigned long), 
+            GFP_KERNEL);
+
+	if (!sbi->streammap)
+		return -ENOMEM;
+
+	for (i = 0; i < NR_CURSEG_TYPE; i++) {
+		sbi->streammap[i] = f2fs_kvzalloc(sbi, f2fs_bitmap_size(MAX_ACTIVE_LOGS),
+                GFP_KERNEL);
+		if (!sbi->streammap[i])
+			return -ENOMEM;
+	}
 
     atomic_set(&sbi->nr_active_streams, 0);
 
-    for (i = CURSEG_HOT_DATA; i < NR_CURSEG_TYPE; i++) 
-    {
+    for (i = 0; i < NR_CURSEG_TYPE; i++) {
+        spin_lock_init(&sbi->streammap_lock[i]);
         atomic_set(&sbi->stream_ctrs[i], 0);
     }
 
-    return 1;
+    return 0;
 }
 #endif
 
@@ -3638,7 +3662,8 @@ static void init_sb_info(struct f2fs_sb_info *sbi)
 		atomic_set(&sbi->wb_sync_req[i], 0);
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    sbi->nr_max_streams = F2FS_OPTION(sbi).nr_max_streams;
+    if (F2FS_OPTION(sbi).nr_max_streams != 0)
+        sbi->nr_max_streams = F2FS_OPTION(sbi).nr_max_streams;
 #endif
 
 	INIT_LIST_HEAD(&sbi->s_list);
@@ -4146,7 +4171,9 @@ try_onemore:
     init_sb_info(sbi);
     
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    init_f2fs_multi_stream_info(sbi);
+    err = f2fs_init_multi_stream_info(sbi);
+    if (err)
+        goto free_multi_stream;
 #endif
 
 	err = f2fs_init_iostat(sbi);
@@ -4467,6 +4494,10 @@ free_meta:
 	/* evict some inodes being cached by GC */
 	evict_inodes(sb);
 	f2fs_unregister_sysfs(sbi);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+free_multi_stream:
+    f2fs_destroy_multi_stream_info(sbi);
+#endif
 free_compress_inode:
 	f2fs_destroy_compress_inode(sbi);
 free_root_inode:

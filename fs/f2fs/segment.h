@@ -491,6 +491,54 @@ static inline unsigned int find_next_free_section(struct free_segmap_info *free_
 }
 #endif
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned int find_next_inuse_stream(struct f2fs_sb_info *sbi,
+		unsigned int max, unsigned int stream, unsigned int type)
+{
+	unsigned int ret;
+	spin_lock(&sbi->streammap_lock[type]);
+	ret = find_next_bit_le(sbi->streammap[type], max, stream);
+	spin_unlock(&sbi->streammap_lock[type]);
+	return ret;
+}
+
+static inline void __set_free_stream(struct f2fs_sb_info *sbi, unsigned int stream,
+        unsigned int type)
+{
+	spin_lock(&sbi->streammap_lock[type]);
+	clear_bit_le(stream, sbi->streammap[type]);
+	atomic_dec(&sbi->stream_ctrs[type]);
+	spin_unlock(&sbi->streammap_lock[type]);
+}
+
+static inline void __set_inuse_stream(struct f2fs_sb_info *sbi,
+		unsigned int type, unsigned int stream)
+{
+	spin_lock(&sbi->streammap_lock[type]);
+	set_bit_le(stream, sbi->streammap[type]);
+	spin_unlock(&sbi->streammap_lock[type]);
+}
+
+static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int stream)
+{
+    bool is_bit_set = false;
+
+	spin_lock(&sbi->streammap_lock[type]);
+	is_bit_set = test_bit_le(stream, sbi->streammap[type]);
+	spin_unlock(&sbi->streammap_lock[type]);
+
+    return is_bit_set;
+}
+
+static inline void get_stream_type_bitmap(struct f2fs_sb_info *sbi,
+		void *dst_addr, unsigned int type)
+{
+	memcpy(dst_addr, sbi->streammap[type], sizeof(unsigned short));
+}
+#endif
+
+
 static inline unsigned int find_next_inuse(struct free_segmap_info *free_i,
 		unsigned int max, unsigned int segno)
 {
