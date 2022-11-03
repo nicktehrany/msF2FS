@@ -3637,6 +3637,7 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
     /* } */
 
     // TODO: this needs to be locked so that no other thread can create a new stream in between these statements
+    // TODO: INTEGRATE ACTIVE STREAMS BITMAP
     nr_active_streams = atomic_read(&sbi->nr_active_streams);
     if (nr_active_streams < sbi->nr_max_streams) {
         f2fs_stream_info(sbi, "Alloc new stream for type: %u", type);
@@ -3664,136 +3665,28 @@ static unsigned int f2fs_allocate_data_block_get_stream(struct f2fs_sb_info *sbi
 
 #endif
 
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
 void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		block_t old_blkaddr, block_t *new_blkaddr,
 		struct f2fs_summary *sum, int type,
 		struct f2fs_io_info *fio)
 {
 	struct sit_info *sit_i = SIT_I(sbi);
-    struct curseg_info *curseg;
-    unsigned int stream;
+#ifdef CONFIG_F2FS_MULTI_STREAM
     bool new_stream = false;
+    unsigned int stream;
+    struct curseg_info *curseg;
+#else
+    struct curseg_info *curseg = CURSEG_I(sbi, type);
+#endif
 	unsigned long long old_mtime;
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
     stream = f2fs_allocate_data_block_get_stream(sbi, type, &new_stream);
 
 	curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
-
-	f2fs_down_read(&SM_I(sbi)->curseg_lock);
-
-	mutex_lock(&curseg->curseg_mutex);
-	down_write(&sit_i->sentry_lock);
-
-    // TODO: we can have policy for GC to write to a new stream if possible
-    // not interfere
-	if (from_gc) {
-		f2fs_bug_on(sbi, GET_SEGNO(sbi, old_blkaddr) == NULL_SEGNO);
-		se = get_seg_entry(sbi, GET_SEGNO(sbi, old_blkaddr));
-		sanity_check_seg_type(sbi, se->type);
-		f2fs_bug_on(sbi, IS_NODESEG(se->type));
-	}
-
-    if (!new_stream) {
-
-        *new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
-
-        f2fs_bug_on(sbi, curseg->next_blkoff >= sbi->blocks_per_seg);
-
-        f2fs_wait_discard_bio(sbi, *new_blkaddr);
-    } else {
-         __allocate_new_section(sbi, type, true, stream);
-
-        *new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
-        
-        __init_sit_entry_stream(sbi, curseg->segno, stream);
-    }
-
-	/*
-	 * __add_sum_entry should be resided under the curseg_mutex
-	 * because, this function updates a summary entry in the
-	 * current summary block.
-	 */
-	__add_sum_entry(sbi, type, sum, stream);
-
-	__refresh_next_blkoff(sbi, curseg);
-
-	stat_inc_block_count(sbi, curseg);
-
-	if (from_gc) {
-		old_mtime = get_segment_mtime(sbi, old_blkaddr);
-	} else {
-		update_segment_mtime(sbi, old_blkaddr, 0);
-		old_mtime = 0;
-	}
-	update_segment_mtime(sbi, *new_blkaddr, old_mtime);
-
-	/*
-	 * SIT information should be updated before segment allocation,
-	 * since SSR needs latest valid block information.
-	 */
-	update_sit_entry(sbi, *new_blkaddr, 1);
-	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO)
-		update_sit_entry(sbi, old_blkaddr, -1);
-
-	if (!new_stream && !__has_curseg_space(sbi, curseg)) {
-		if (from_gc)
-			get_atssr_segment(sbi, type, se->type,
-						AT_SSR, se->mtime, stream);
-		else
-			sit_i->s_ops->allocate_segment(sbi, type, false, stream);
-	}
-
-	/*
-	 * segment dirty status should be updated after segment allocation,
-	 * so we just need to update status only one time after previous
-	 * segment being closed.
-	 */
-    if (!new_stream) {
-        locate_dirty_segment(sbi, GET_SEGNO(sbi, old_blkaddr));
-        locate_dirty_segment(sbi, GET_SEGNO(sbi, *new_blkaddr));
-    }
-
-	up_write(&sit_i->sentry_lock);
-
-	if (page && IS_NODESEG(type)) {
-		fill_node_footer_blkaddr(page, NEXT_FREE_BLKADDR(sbi, curseg));
-
-		f2fs_inode_chksum_set(sbi, page);
-	}
-
-	if (fio) {
-		struct f2fs_bio_info *io;
-
-		if (F2FS_IO_ALIGNED(sbi))
-			fio->retry = false;
-
-		INIT_LIST_HEAD(&fio->list);
-		fio->in_list = true;
-		io = sbi->write_io[fio->type] + fio->temp;
-		spin_lock(&io->io_lock);
-		list_add_tail(&fio->list, &io->io_list);
-		spin_unlock(&io->io_lock);
-	}
-
-	mutex_unlock(&curseg->curseg_mutex);
-
-	f2fs_up_read(&SM_I(sbi)->curseg_lock);
-}
-#else
-void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
-		block_t old_blkaddr, block_t *new_blkaddr,
-		struct f2fs_summary *sum, int type,
-		struct f2fs_io_info *fio)
-{
-	struct sit_info *sit_i = SIT_I(sbi);
-    struct curseg_info *curseg = CURSEG_I(sbi, type);
-	unsigned long long old_mtime;
-	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
-	struct seg_entry *se = NULL;
+#endif
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
@@ -3806,6 +3699,14 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		sanity_check_seg_type(sbi, se->type);
 		f2fs_bug_on(sbi, IS_NODESEG(se->type));
 	}
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    if (new_stream) 
+        __allocate_new_section(sbi, type, true, stream);
+
+    __init_sit_entry_stream(sbi, curseg->segno, stream);
+#endif
+
 	*new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
 
 	f2fs_bug_on(sbi, curseg->next_blkoff >= sbi->blocks_per_seg);
@@ -3817,7 +3718,11 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	 * because, this function updates a summary entry in the
 	 * current summary block.
 	 */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	__add_sum_entry(sbi, type, sum, stream);
+#else
 	__add_sum_entry(sbi, type, sum);
+#endif
 
 	__refresh_next_blkoff(sbi, curseg);
 
@@ -3839,6 +3744,15 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO)
 		update_sit_entry(sbi, old_blkaddr, -1);
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	if (!new_stream && !__has_curseg_space(sbi, curseg)) {
+		if (from_gc)
+			get_atssr_segment(sbi, type, se->type,
+						AT_SSR, se->mtime, stream);
+		else
+			sit_i->s_ops->allocate_segment(sbi, type, false, stream);
+	}
+#else
 	if (!__has_curseg_space(sbi, curseg)) {
 		if (from_gc)
 			get_atssr_segment(sbi, type, se->type,
@@ -3846,6 +3760,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		else
 			sit_i->s_ops->allocate_segment(sbi, type, false);
 	}
+#endif
 
 	/*
 	 * segment dirty status should be updated after segment allocation,
@@ -3881,7 +3796,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 
 	f2fs_up_read(&SM_I(sbi)->curseg_lock);
 }
-#endif
 
 void f2fs_update_device_state(struct f2fs_sb_info *sbi, nid_t ino,
 					block_t blkaddr, unsigned int blkcnt)
