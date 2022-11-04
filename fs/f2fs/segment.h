@@ -528,10 +528,12 @@ static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
     bool new_stream = true;
 
 	spin_lock(&sbi->streammap_lock);
+    f2fs_info(sbi, "MAX_STREAMS %u", sbi->nr_max_streams);
     if (atomic_read(&sbi->nr_active_streams) < sbi->nr_max_streams) {
         *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
         set_bit_le(*stream, sbi->streammap[type]);
         atomic_inc(&sbi->nr_active_streams);
+        f2fs_info(sbi, "Alloc new stream <type stream>: <%u %u>", type, *stream);
     } else {
         new_stream = false;
     }

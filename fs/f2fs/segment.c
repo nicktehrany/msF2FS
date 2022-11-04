@@ -2670,20 +2670,6 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
 }
 #endif
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
-static unsigned int __get_next_section_segno(struct f2fs_sb_info *sbi, int type)
-{
-    struct free_segmap_info *free_i = FREE_I(sbi);
-    unsigned int secno;
-    unsigned int segno;
-
-    secno = find_next_free_section(free_i, sbi->total_sections);
-    segno = GET_SEG_FROM_SEC(sbi, secno);
-
-    return segno;
-}
-#endif
-
 /*
  * Allocate a current working segment.
  * This function always allocates a free segment in LFS manner.
@@ -4962,7 +4948,7 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 
 	SM_I(sbi)->curseg_array = array;
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
+#if defined(CONFIG_F2FS_MULTI_STREAM_FF) && !defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
     /* Init all of the curseg_array, since we do not know how many
      * we end up using. Therefore, stream info is only intialized
      * for the default 1 stream per type (hot/warm/cold for data/node)
@@ -4993,6 +4979,35 @@ static int build_curseg(struct f2fs_sb_info *sbi)
              * at least one stream allocated for each type
              */
             if (!__test_and_set_inuse_new_stream(sbi, i, &stream) && stream != 0)
+                f2fs_err(sbi, "Failed initializing stream 0 for type: %u", i);
+        }
+    }
+#elif defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
+    for (i = 0; i < NR_CURSEG_TYPE * MAX_ACTIVE_LOGS; i++) {
+        mutex_init(&array[i].curseg_mutex);
+        // TODO: currently we over allocate which we can avoid since we know which 
+        // streams to allocate
+        array[i].sum_blk = f2fs_kzalloc(sbi, PAGE_SIZE, GFP_KERNEL);
+        if (!array[i].sum_blk)
+            return -ENOMEM;
+        init_rwsem(&array[i].journal_rwsem);
+        array[i].journal = f2fs_kzalloc(sbi,
+                sizeof(struct f2fs_journal), GFP_KERNEL);
+        if (!array[i].journal)
+            return -ENOMEM;
+        if (i % NR_CURSEG_TYPE < NR_PERSISTENT_LOG)
+            array[i].seg_type = CURSEG_HOT_DATA + (i % NR_CURSEG_TYPE);
+        else if (i % NR_CURSEG_TYPE == CURSEG_COLD_DATA_PINNED)
+            array[i].seg_type = CURSEG_COLD_DATA;
+        else if (i % NR_CURSEG_TYPE == CURSEG_ALL_DATA_ATGC)
+            array[i].seg_type = CURSEG_COLD_DATA;
+        array[i].segno = NULL_SEGNO;
+        array[i].next_blkoff = 0;
+        array[i].inited = false;
+        if (i % NR_CURSEG_TYPE < NR_PERSISTENT_LOG && 
+                i / NR_CURSEG_TYPE < F2FS_OPTION(sbi).nr_streams[i % NR_CURSEG_TYPE])
+        {
+            if (!__test_and_set_inuse_new_stream(sbi, i % NR_CURSEG_TYPE, &stream) && stream != 0)
                 f2fs_err(sbi, "Failed initializing stream 0 for type: %u", i);
         }
     }
@@ -5154,6 +5169,10 @@ static void init_free_segmap(struct f2fs_sb_info *sbi)
 	unsigned int start;
 	int type;
 	struct seg_entry *sentry;
+#ifdef CONFIG_F2FS_MULTI_STREAM_STATIC
+    int j;
+    unsigned int streams;
+#endif
 
 	for (start = 0; start < MAIN_SEGS(sbi); start++) {
 		if (f2fs_usable_blks_in_seg(sbi, start) == 0)
@@ -5167,11 +5186,25 @@ static void init_free_segmap(struct f2fs_sb_info *sbi)
 	}
 
 	/* set use the current segments */
+#ifdef CONFIG_F2FS_MULTI_STREAM_STATIC
+    /* For non-static multi stream, at init time there are only 1
+     * stream per segment type, hence the default function works.
+     * With static we may have initialized multiple streams already */
+	for (type = CURSEG_HOT_DATA; type <= CURSEG_COLD_NODE; type++) {
+        streams = __get_number_active_streams_for_type(sbi, type);
+        for (j = 0; j < streams; j++) {
+            struct curseg_info *curseg_t = CURSEG_I(sbi, j * NR_CURSEG_TYPE + type);
+
+            __set_test_and_inuse(sbi, curseg_t->segno);
+        }
+	}
+#else
 	for (type = CURSEG_HOT_DATA; type <= CURSEG_COLD_NODE; type++) {
 		struct curseg_info *curseg_t = CURSEG_I(sbi, type);
 
 		__set_test_and_inuse(sbi, curseg_t->segno);
 	}
+#endif
 }
 
 static void init_dirty_segmap(struct f2fs_sb_info *sbi)

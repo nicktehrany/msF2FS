@@ -138,6 +138,13 @@ struct f2fs_rwsem {
 #endif
 };
 
+#define	NR_CURSEG_DATA_TYPE	(3)
+#define NR_CURSEG_NODE_TYPE	(3)
+#define NR_CURSEG_INMEM_TYPE	(2)
+#define NR_CURSEG_RO_TYPE	(2)
+#define NR_CURSEG_PERSIST_TYPE	(NR_CURSEG_DATA_TYPE + NR_CURSEG_NODE_TYPE)
+#define NR_CURSEG_TYPE		(NR_CURSEG_INMEM_TYPE + NR_CURSEG_PERSIST_TYPE)
+
 struct f2fs_mount_info {
 	unsigned int opt;
 	int write_io_size_bits;		/* Write IO size bits */
@@ -182,6 +189,9 @@ struct f2fs_mount_info {
 	unsigned char noextensions[COMPRESS_EXT_NUM][F2FS_EXTENSION_LEN]; /* extensions */
 #ifdef CONFIG_F2FS_MULTI_STREAM
     uint nr_max_streams;
+#endif
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    uint nr_streams[NR_CURSEG_TYPE];
 #endif
 };
 
@@ -997,12 +1007,6 @@ static inline void set_new_dnode(struct dnode_of_data *dn, struct inode *inode,
  * Just in case, on-disk layout covers maximum 16 logs that consist of 8 for
  * data and 8 for node logs.
  */
-#define	NR_CURSEG_DATA_TYPE	(3)
-#define NR_CURSEG_NODE_TYPE	(3)
-#define NR_CURSEG_INMEM_TYPE	(2)
-#define NR_CURSEG_RO_TYPE	(2)
-#define NR_CURSEG_PERSIST_TYPE	(NR_CURSEG_DATA_TYPE + NR_CURSEG_NODE_TYPE)
-#define NR_CURSEG_TYPE		(NR_CURSEG_INMEM_TYPE + NR_CURSEG_PERSIST_TYPE)
 
 enum {
 	CURSEG_HOT_DATA	= 0,	/* directory entry blocks */

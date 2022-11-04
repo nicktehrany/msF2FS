@@ -165,14 +165,13 @@ config F2FS_MULTI_STREAM
 choice
     prompt "Stream Alloaction Policy"
     depends on F2FS_MULTI_STREAM
-    default F2FS_MULT_STREAM_FF_DEFAULT
+    default F2FS_MULT_STREAM_FF
     help
         Select a stream allocation policy. Options include First Fit Stream
         Allocation and Static Stream Allocation.
 
-config F2FS_MULT_STREAM_FF_DEFAULT
-    bool "First Fit"
-    select F2FS_MULTI_STREAM_FF
+config F2FS_MULT_STREAM_FF
+    bool "First Fit Allocation"
     help
         Use First Fit allocation for data into streams of a log type. Iterate
         over available streams for a type, select the first one that is idle
@@ -181,10 +180,8 @@ config F2FS_MULT_STREAM_FF_DEFAULT
         maximum configured number of active streams. If no stream can be opened
         the first stream is selected.
 
-config F2FS_MULTI_STREAM_STATIC_RR_DEFAULT
-    bool "Static Round Robin"
-    select F2FS_MULTI_STREAM_STATIC
-    select F2FS_MULTI_STREAM_STATIC_RR
+config F2FS_MULTI_STREAM_STATIC
+    bool "Static Stream Allocation"
     help
         Use static stream allocation by assigning the maximum number of streams
         per type (hot/warm/cold for each: data and node) at mount time. This
@@ -197,10 +194,3 @@ config F2FS_MULTI_STREAM_STATIC_RR_DEFAULT
         type is 11. The default allocation policy across available streams is 
         Round Robin.
 endchoice
-
-config F2FS_MULTI_STREAM_POLICY
-    string
-    depends on F2FS_MULTI_STREAM
-    default "FIRST_FIT" if F2FS_MULT_STREAM_FF_DEFAULT
-    default "STATIC_RR" if F2FS_MULTI_STREAM_STATIC_RR_DEFAULT
-    default ""

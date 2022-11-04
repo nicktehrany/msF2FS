@@ -101,6 +101,12 @@ enum {
 	Opt_noacl,
 	Opt_active_logs,
     Opt_streams,
+    Opt_hot_data_streams,
+    Opt_warm_data_streams,
+    Opt_cold_data_streams,
+    Opt_hot_node_streams,
+    Opt_warm_node_streams,
+    Opt_cold_node_streams,
 	Opt_disable_ext_identify,
 	Opt_inline_xattr,
 	Opt_noinline_xattr,
@@ -177,6 +183,12 @@ static match_table_t f2fs_tokens = {
 	{Opt_noacl, "noacl"},
 	{Opt_active_logs, "active_logs=%u"},
 	{Opt_streams, "streams=%u"},
+	{Opt_hot_data_streams, "hot_data_streams=%u"},
+	{Opt_warm_data_streams, "warm_data_streams=%u"},
+	{Opt_cold_data_streams, "cold_data_streams=%u"},
+	{Opt_hot_node_streams, "hot_node_streams=%u"},
+	{Opt_warm_node_streams, "warm_node_streams=%u"},
+	{Opt_cold_node_streams, "cold_node_streams=%u"},
 	{Opt_disable_ext_identify, "disable_ext_identify"},
 	{Opt_inline_xattr, "inline_xattr"},
 	{Opt_noinline_xattr, "noinline_xattr"},
@@ -767,7 +779,7 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 		case Opt_active_logs:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-#ifdef CONFIG_F2FS_MULTI_STREAM
+#if defined(CONFIG_F2FS_MULTI_STREAM) && !defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
             f2fs_info(sbi, "active_logs not supported");
             break;
         case Opt_streams:
@@ -779,6 +791,105 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
             }
             F2FS_OPTION(sbi).nr_max_streams = arg;
+            break;
+#elif defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
+            f2fs_info(sbi, "active_logs not supported");
+            break;
+        case Opt_hot_data_streams:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
+            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
+            {
+                f2fs_info(sbi, "Invalid hot data streams: %u must be at least 1 up to 11", arg);
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_max_streams += arg;
+            if (F2FS_OPTION(sbi).nr_max_streams > MAX_ACTIVE_LOGS)
+            {
+                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_streams[CURSEG_HOT_DATA] = arg;
+            break;
+        case Opt_warm_data_streams:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
+            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
+            {
+                f2fs_info(sbi, "Invalid warm data streams: %u must be at least 1 up to 11", arg);
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_max_streams += arg;
+            if (F2FS_OPTION(sbi).nr_max_streams > MAX_ACTIVE_LOGS)
+            {
+                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_streams[CURSEG_WARM_DATA] = arg;
+            break;
+        case Opt_cold_data_streams:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
+            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
+            {
+                f2fs_info(sbi, "Invalid cold data streams: %u must be at least 1 up to 11", arg);
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_max_streams += arg;
+            if (F2FS_OPTION(sbi).nr_max_streams > MAX_ACTIVE_LOGS)
+            {
+                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_DATA] = arg;
+            break;
+        case Opt_hot_node_streams:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
+            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
+            {
+                f2fs_info(sbi, "Invalid hot node streams: %u must be at least 1 up to 11", arg);
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_max_streams += arg;
+            if (F2FS_OPTION(sbi).nr_max_streams > MAX_ACTIVE_LOGS)
+            {
+                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_streams[CURSEG_HOT_NODE] = arg;
+            break;
+        case Opt_warm_node_streams:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
+            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
+            {
+                f2fs_info(sbi, "Invalid warm node streams: %u must be at least 1 up to 11", arg);
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_max_streams += arg;
+            if (F2FS_OPTION(sbi).nr_max_streams > MAX_ACTIVE_LOGS)
+            {
+                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_streams[CURSEG_WARM_NODE] = arg;
+            break;
+        case Opt_cold_node_streams:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
+            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
+            {
+                f2fs_info(sbi, "Invalid cold node streams: %u must be at least 1 up to 11", arg);
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_max_streams += arg;
+            if (F2FS_OPTION(sbi).nr_max_streams > MAX_ACTIVE_LOGS)
+            {
+                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                return -EINVAL;
+            }
+            F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_NODE] = arg;
             break;
 #else
 			if (arg != 2 && arg != 4 &&
@@ -1953,8 +2064,15 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 	else if (F2FS_OPTION(sbi).fs_mode == FS_MODE_FRAGMENT_BLK)
 		seq_puts(seq, "fragment:block");
 	seq_printf(seq, ",active_logs=%u", F2FS_OPTION(sbi).active_logs);
-#ifdef CONFIG_F2FS_MULTI_STREAM
+#if defined(CONFIG_F2FS_MULTI_STREAM) && !defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
 	seq_printf(seq, ",streams=%u", F2FS_OPTION(sbi).nr_max_streams);
+#elif defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
+	seq_printf(seq, ",hot_data_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_HOT_DATA]);
+	seq_printf(seq, ",warm_data_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_WARM_DATA]);
+	seq_printf(seq, ",cold_data_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_DATA]);
+	seq_printf(seq, ",hot_node_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_HOT_NODE]);
+	seq_printf(seq, ",warm_node_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_WARM_NODE]);
+	seq_printf(seq, ",cold_node_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_NODE]);
 #endif
 	if (test_opt(sbi, RESERVE_ROOT))
 		seq_printf(seq, ",reserve_root=%u,resuid=%u,resgid=%u",
@@ -2052,20 +2170,31 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
     atomic_set(&sbi->nr_active_streams, 0);
 	spin_unlock(&sbi->streammap_lock);
 
+#ifdef CONFIG_F2FS_MULTI_STREAM_STATIC
+    sbi->nr_max_streams = F2FS_OPTION(sbi).nr_max_streams;
+#endif
+
     return 0;
 }
 #endif
 
 static void default_options(struct f2fs_sb_info *sbi)
 {
+#ifdef CONFIG_F2FS_MULTI_STREAM_STATIC
+    int i;
+#endif
+
 	/* init some FS parameters */
 	if (f2fs_sb_has_readonly(sbi))
 		F2FS_OPTION(sbi).active_logs = NR_CURSEG_RO_TYPE;
 	else
 		F2FS_OPTION(sbi).active_logs = NR_CURSEG_PERSIST_TYPE;
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
+#if defined(CONFIG_F2FS_MULTI_STREAM) && !defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
     F2FS_OPTION(sbi).nr_max_streams = NR_CURSEG_PERSIST_TYPE;
+#elif defined(CONFIG_F2FS_MULTI_STREAM_STATIC)
+    for (i = 0; i <= CURSEG_COLD_NODE; i++)
+       F2FS_OPTION(sbi).nr_streams[i] = 1; 
 #endif
 
 	F2FS_OPTION(sbi).inline_xattr_size = DEFAULT_INLINE_XATTR_ADDRS;
@@ -4213,15 +4342,6 @@ try_onemore:
 		f2fs_err(sbi, "Failed to get valid F2FS checkpoint");
 		goto free_meta_inode;
 	}
-
-/* #ifdef CONFIG_F2FS_MULTI_STREAM */
-/*     if (sbi->nr_max_streams != le32_to_cpu(sbi->ckpt->nr_max_streams)) */
-/*     { */
-/*         // TODO we want to use the same, just update ckpt to have new max_streams */
-/*         /1* f2fs_info(sbi, "Using number of streams setting found in checkpoint: %u\n", le32_to_cpu(sbi->ckpt->nr_max_streams)); *1/ */
-/*         /1* sbi->nr_max_streams = le32_to_cpu(sbi->ckpt->nr_max_streams); *1/ */
-/*     } */
-/* #endif */
 
 	if (__is_set_ckpt_flags(F2FS_CKPT(sbi), CP_QUOTA_NEED_FSCK_FLAG))
 		set_sbi_flag(sbi, SBI_QUOTA_NEED_REPAIR);
