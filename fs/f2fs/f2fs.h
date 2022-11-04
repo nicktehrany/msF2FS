@@ -1840,8 +1840,7 @@ struct f2fs_sb_info {
 #ifdef CONFIG_F2FS_MULTI_STREAM
     uint nr_max_streams;
     atomic_t nr_active_streams;
-    atomic_t stream_ctrs[NR_CURSEG_TYPE];
-    spinlock_t streammap_lock[NR_CURSEG_TYPE];
+    spinlock_t streammap_lock;
     unsigned long **streammap;
 #endif
 };

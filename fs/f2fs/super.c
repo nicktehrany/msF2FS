@@ -2031,7 +2031,7 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 #ifdef CONFIG_F2FS_MULTI_STREAM
 static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 {
-    int i, j;
+    int i;
 
     sbi->streammap = f2fs_kvzalloc(sbi, NR_CURSEG_TYPE * sizeof(unsigned long), 
             GFP_KERNEL);
@@ -2046,12 +2046,11 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 			return -ENOMEM;
 	}
 
-    atomic_set(&sbi->nr_active_streams, 0);
 
-    for (i = 0; i < NR_CURSEG_TYPE; i++) {
-        spin_lock_init(&sbi->streammap_lock[i]);
-        atomic_set(&sbi->stream_ctrs[i], 0);
-    }
+    spin_lock_init(&sbi->streammap_lock);
+	spin_lock(&sbi->streammap_lock);
+    atomic_set(&sbi->nr_active_streams, 0);
+	spin_unlock(&sbi->streammap_lock);
 
     return 0;
 }

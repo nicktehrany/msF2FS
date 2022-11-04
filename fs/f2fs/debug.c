@@ -178,7 +178,7 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 	si->util_invalid = 50 - si->util_free - si->util_valid;
 #ifdef CONFIG_F2FS_MULTI_STREAM
     si->nr_max_streams = sbi->nr_max_streams;
-    si->nr_active_streams = atomic_read(&sbi->nr_active_streams);
+    si->nr_active_streams = __get_number_active_streams(sbi);
     for (i = 0; i < sbi->nr_max_streams; i++) {
         for (j = CURSEG_HOT_DATA; j < NR_CURSEG_TYPE; j++) {
             curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + j);
@@ -383,6 +383,9 @@ static int stat_show(struct seq_file *s, void *v)
 	struct f2fs_stat_info *si;
 	int i = 0, j = 0;
 	unsigned long flags;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int streams;
+#endif
 
 	raw_spin_lock_irqsave(&f2fs_stat_lock, flags);
 	list_for_each_entry(si, &f2fs_stat_list, stat_list) {
@@ -440,12 +443,12 @@ static int stat_show(struct seq_file *s, void *v)
         seq_printf(s, "  - Active Streams: %u\n",
                 si->nr_active_streams);
         seq_printf(s, "  - STREAMS: [ %2u %2u %2u %2u %2u %2u  ]\n",
-                atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_DATA]),
-                atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_DATA]),
-                atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_DATA]),
-                atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_NODE]),
-                atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_NODE]),
-                atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_NODE]));
+                __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA),
+                __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_DATA),
+                __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_DATA),
+                __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_NODE),
+                __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_NODE),
+                __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_NODE));
         seq_printf(s, "  - STREAM BITMAPS:\n");
         for (i = 0; i < NR_CURSEG_PERSIST_TYPE; i++) {
             switch (i) {
@@ -479,7 +482,8 @@ static int stat_show(struct seq_file *s, void *v)
         }
 		seq_printf(s, "\n    TYPE     %8s %8s %8s %8s %10s %10s %10s\n",
 			   "STREAM", "segno", "secno", "zoneno", "dirty_seg", "full_seg", "valid_blk");
-        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_DATA]); i++)
+        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA);
+        for (i = 0; i < streams; i++)
         {
             seq_printf(s, "  - HOT  data:  %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
@@ -489,7 +493,8 @@ static int stat_show(struct seq_file *s, void *v)
                     si->full_seg[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
                     si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA]);
         }
-        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_DATA]); i++)
+        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_DATA);
+        for (i = 0; i < streams; i++)
         {
 		seq_printf(s, "  - WARM data:  %4d %8d %8d %8d %10u %10u %10u\n",
 			   i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
@@ -499,7 +504,8 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->full_seg[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
 			   si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA]);
         }
-        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_DATA]); i++)
+        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_DATA);
+        for (i = 0; i < streams; i++)
         {
             seq_printf(s, "  - COLD data:  %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
@@ -509,7 +515,8 @@ static int stat_show(struct seq_file *s, void *v)
                     si->full_seg[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
                     si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA]);
         }
-        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_HOT_NODE]); i++)
+        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_NODE);
+        for (i = 0; i < streams; i++)
         {
             seq_printf(s, "  - HOT  node:  %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
@@ -519,7 +526,8 @@ static int stat_show(struct seq_file *s, void *v)
                     si->full_seg[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
                     si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE]);
         }
-        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_WARM_NODE]); i++)
+        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_NODE);
+        for (i = 0; i < streams; i++)
         {
 		seq_printf(s, "  - WARM node:  %4d %8d %8d %8d %10u %10u %10u\n",
 			   i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
@@ -529,7 +537,8 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->full_seg[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
 			   si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE]);
         }
-        for (i = 0; i < atomic_read(&si->sbi->stream_ctrs[CURSEG_COLD_NODE]); i++)
+        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_NODE);
+        for (i = 0; i < streams; i++)
         {
             seq_printf(s, "  - COLD node:  %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],

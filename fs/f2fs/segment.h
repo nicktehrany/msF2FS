@@ -349,10 +349,24 @@ static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned int __get_number_active_streams(struct f2fs_sb_info *sbi)
+{
+    unsigned int streams = 0;
+
+    /* Active streams read is atomic but let's make sure no other thread is 
+     * currently modifying any of the streams info 
+     * */
+	spin_lock(&sbi->streammap_lock);
+    streams = atomic_read(&sbi->nr_active_streams);
+	spin_unlock(&sbi->streammap_lock);
+    
+    return streams;
+}
+
 static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
 {
     int stream, type;
-    int active_streams = atomic_read(&sbi->nr_active_streams);
+    int active_streams = __get_number_active_streams(sbi);
 
     for (stream = 0; stream < active_streams; stream++) {
         for (type = 0; type < NR_CURSEG_TYPE; type++) {
@@ -367,7 +381,7 @@ static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
 static int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
 {
     int stream, type;
-    int active_streams = atomic_read(&sbi->nr_active_streams);
+    int active_streams = __get_number_active_streams(sbi);
 
     for (stream = 0; stream < active_streams; stream++) {
         for (type = 0; type < NR_CURSEG_TYPE; type++) {
@@ -498,31 +512,33 @@ static inline unsigned int find_next_free_section(struct free_segmap_info *free_
 #endif
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static inline unsigned int find_next_inuse_stream(struct f2fs_sb_info *sbi,
+static inline unsigned int __find_next_inuse_stream(struct f2fs_sb_info *sbi,
 		unsigned int max, unsigned int stream, unsigned int type)
 {
 	unsigned int ret;
-	spin_lock(&sbi->streammap_lock[type]);
+	spin_lock(&sbi->streammap_lock);
 	ret = find_next_bit_le(sbi->streammap[type], max, stream);
-	spin_unlock(&sbi->streammap_lock[type]);
+	spin_unlock(&sbi->streammap_lock);
 	return ret;
 }
 
-static inline void __set_free_stream(struct f2fs_sb_info *sbi, unsigned int stream,
-        unsigned int type)
+static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int *stream)
 {
-	spin_lock(&sbi->streammap_lock[type]);
-	clear_bit_le(stream, sbi->streammap[type]);
-	atomic_dec(&sbi->stream_ctrs[type]);
-	spin_unlock(&sbi->streammap_lock[type]);
-}
+    bool new_stream = true;
 
-static inline void __set_inuse_stream(struct f2fs_sb_info *sbi,
-		unsigned int type, unsigned int stream)
-{
-	spin_lock(&sbi->streammap_lock[type]);
-	set_bit_le(stream, sbi->streammap[type]);
-	spin_unlock(&sbi->streammap_lock[type]);
+	spin_lock(&sbi->streammap_lock);
+    if (atomic_read(&sbi->nr_active_streams) < sbi->nr_max_streams) {
+        *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
+        set_bit_le(*stream, sbi->streammap[type]);
+        atomic_inc(&sbi->nr_active_streams);
+    } else {
+        new_stream = false;
+    }
+
+    spin_unlock(&sbi->streammap_lock);
+
+    return new_stream;
 }
 
 static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
@@ -530,11 +546,23 @@ static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
 {
     bool is_bit_set = false;
 
-	spin_lock(&sbi->streammap_lock[type]);
+	spin_lock(&sbi->streammap_lock);
 	is_bit_set = test_bit_le(stream, sbi->streammap[type]);
-	spin_unlock(&sbi->streammap_lock[type]);
+	spin_unlock(&sbi->streammap_lock);
 
     return is_bit_set;
+}
+
+static inline unsigned int __get_number_active_streams_for_type(struct f2fs_sb_info *sbi,
+        unsigned int type)
+{
+    unsigned int streams = 0;
+
+	spin_lock(&sbi->streammap_lock);
+	streams = find_next_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS, 0);
+	spin_unlock(&sbi->streammap_lock);
+
+    return streams;
 }
 
 static inline void get_stream_type_bitmap(struct f2fs_sb_info *sbi,

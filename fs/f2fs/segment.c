@@ -3622,7 +3622,7 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
 {
     int nr_active_streams;
     int i = 0;
-    int streams = atomic_read(&sbi->stream_ctrs[type]);
+    int streams = __get_number_active_streams_for_type(sbi, type);
     unsigned int stream;
     struct curseg_info *curseg;
 
@@ -3636,18 +3636,11 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
     /*     } */
     /* } */
 
-    // TODO: this needs to be locked so that no other thread can create a new stream in between these statements
-    // TODO: INTEGRATE ACTIVE STREAMS BITMAP
-    nr_active_streams = atomic_read(&sbi->nr_active_streams);
-    if (nr_active_streams < sbi->nr_max_streams) {
-        f2fs_stream_info(sbi, "Alloc new stream for type: %u", type);
+    if (__test_and_set_inuse_new_stream(sbi, type, &stream)) {
         *new_stream = true;
+        f2fs_stream_info(sbi, "Alloc new stream for type: %u", type);
 
-        stream = atomic_inc_return(&sbi->stream_ctrs[type]) - 1;
-        atomic_inc(&sbi->nr_active_streams);
-        __set_inuse_stream(sbi, type, stream);
-
-        return stream; 
+        return stream;
     }
 
     /* 
@@ -3961,9 +3954,11 @@ static inline int __f2fs_get_curseg(struct f2fs_sb_info *sbi,
 						unsigned int segno)
 {
 	int i, j;
+    unsigned int streams;
 
 	for (i = CURSEG_HOT_DATA; i < NO_CHECK_TYPE; i++) {
-        for (j = 0; j < atomic_read(&sbi->stream_ctrs[i]); j++) {
+        streams = __get_number_active_streams_for_type(sbi, i);
+        for (j = 0; j < streams; j++) {
             if (CURSEG_I(sbi, j * NR_CURSEG_TYPE + i)->segno == segno)
                 break;
             }
@@ -4378,6 +4373,7 @@ static int restore_curseg_summaries(struct f2fs_sb_info *sbi)
 	int err;
 #ifdef CONFIG_F2FS_MULTI_STREAM
     int j;
+    unsigned int streams;
 #endif
 
 	if (is_set_ckpt_flags(sbi, CP_COMPACT_SUM_FLAG)) {
@@ -4401,7 +4397,8 @@ static int restore_curseg_summaries(struct f2fs_sb_info *sbi)
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
 	for (; type <= CURSEG_COLD_NODE; type++) {
-        for (j = 0; j < atomic_read(&sbi->stream_ctrs[type]); j++) {
+        streams = __get_number_active_streams_for_type(sbi, type);
+        for (j = 0; j < streams; j++) {
             err = read_normal_summaries(sbi, type, j);
             if (err)
                 return err;
@@ -4501,7 +4498,7 @@ static void write_normal_summaries(struct f2fs_sb_info *sbi,
 #ifdef CONFIG_F2FS_MULTI_STREAM
     for (i = type; i < end; i++)
     { 
-        streams = atomic_read(&sbi->stream_ctrs[i]);
+        streams = __get_number_active_streams_for_type(sbi, type);
 
         for (j = 0; j < streams; j++)
         {
@@ -4932,8 +4929,9 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 {
 	struct curseg_info *array;
 	int i;
-
 #ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream;
+
 	array = f2fs_kzalloc(sbi, array_size(NR_CURSEG_TYPE * MAX_ACTIVE_LOGS,
 					sizeof(*array)), GFP_KERNEL);
 #else
@@ -4948,7 +4946,7 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
     /* Init all of the curseg_array, since we do not know how many
-     * we end up using. Therefore, sbi->stream_ctrs is only intialized
+     * we end up using. Therefore, stream info is only intialized
      * for the default 1 stream per type (hot/warm/cold for data/node)
      */
     for (i = 0; i < NR_CURSEG_TYPE * MAX_ACTIVE_LOGS; i++) {
@@ -4972,10 +4970,12 @@ static int build_curseg(struct f2fs_sb_info *sbi)
         array[i].inited = false;
         if (i < NR_PERSISTENT_LOG)
         {
-            // TODO: streams vars need locking
-            __set_inuse_stream(sbi, i, 0);
-            atomic_inc(&sbi->nr_active_streams);
-            atomic_inc(&sbi->stream_ctrs[i]);
+            /* The first stram initialization should always succeed because 
+             * maximum number of streams is at least 6, hence allows for 
+             * at least one stream allocated for each type
+             */
+            if (!__test_and_set_inuse_new_stream(sbi, i, &stream) && stream != 0)
+                f2fs_err(sbi, "Failed initializing stream 0 for type: %u", i);
         }
     }
 #else
@@ -5257,13 +5257,15 @@ static int build_dirty_segmap(struct f2fs_sb_info *sbi)
 static int sanity_check_curseg(struct f2fs_sb_info *sbi)
 {
 	int i, j;
+    unsigned int streams;
 
 	/*
 	 * In LFS/SSR curseg, .next_blkoff should point to an unused blkaddr;
 	 * In LFS curseg, all blkaddr after .next_blkoff should be unused.
 	 */
 	for (i = 0; i < NR_PERSISTENT_LOG; i++) {
-        for (j = 0; j < atomic_read(&sbi->stream_ctrs[i]); j++) {
+        streams = __get_number_active_streams_for_type(sbi, i);
+        for (j = 0; j < streams; j++) {
             struct curseg_info *curseg = CURSEG_I(sbi, j * NR_CURSEG_TYPE + i);
             struct seg_entry *se = get_seg_entry(sbi, curseg->segno);
             unsigned int blkofs = curseg->next_blkoff;

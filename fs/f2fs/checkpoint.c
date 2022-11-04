@@ -1458,7 +1458,7 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
 	for (i = 0; i < NR_CURSEG_NODE_TYPE; i++) {
-        streams = atomic_read(&sbi->stream_ctrs[i]);
+        streams = __get_number_active_streams_for_type(sbi, i);
         for (j = 0; j < streams; j++) {
 		ckpt->cur_node_segno[j * NR_CURSEG_NODE_TYPE + i] =
 			cpu_to_le32(curseg_segno_at(sbi, i + CURSEG_HOT_NODE, j));
@@ -1469,7 +1469,7 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
         }
     }
 	for (i = 0; i < NR_CURSEG_DATA_TYPE; i++) {
-        streams = atomic_read(&sbi->stream_ctrs[i]);
+        streams = __get_number_active_streams_for_type(sbi, i);
         for (j = 0; j < streams; j++) {
 		ckpt->cur_data_segno[j * NR_CURSEG_DATA_TYPE + i] =
 			cpu_to_le32(curseg_segno_at(sbi, i + CURSEG_HOT_DATA, j));
@@ -1516,7 +1516,7 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
 				cp_payload_blks + data_sum_blocks +
 				orphan_blocks + NR_CURSEG_NODE_TYPE * NR_CURSEG_TYPE * 
-                atomic_read(&sbi->nr_active_streams));
+                __get_number_active_streams(sbi));
 #else
 		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
 				cp_payload_blks + data_sum_blocks +
@@ -1527,7 +1527,7 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
 				cp_payload_blks + data_sum_blocks +
 				orphan_blocks + NR_CURSEG_DATA_TYPE * 
-                atomic_read(&sbi->nr_active_streams));
+                __get_number_active_streams(sbi));
 #else
 		ckpt->cp_pack_total_block_count = cpu_to_le32(F2FS_CP_PACKS +
 				cp_payload_blks + data_sum_blocks +
