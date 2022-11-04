@@ -3616,32 +3616,45 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 	return type;
 }
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
+#ifdef CONFIG_F2FS_MULTI_STREAM_FF
 static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi, 
         int type, bool *new_stream)
 {
-    int nr_active_streams;
     int i = 0;
-    int streams = __get_number_active_streams_for_type(sbi, type);
     unsigned int stream;
     struct curseg_info *curseg;
+    bool maximum_streams_reached = false;
+    int streams = __get_number_active_streams_for_type(sbi, type);
 
-    // TODO: this currently never actually happens even if under concurrency, can we have better decision making to start new stream? based on iostats maybe?
-    /* for (i = 0; i < streams; i++) */
-    /* { */
-    /*     curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + type); */
-    /*     if (!mutex_is_locked(&curseg->curseg_mutex)) /1* TODO: how can we get the size to check if has_curseg_enough_space *1/ */
-    /*     { */
-    /*         return i; */
-    /*     } */
-    /* } */
+    // TODO: this currently never actually happens even if under concurrency, can we have better decision making to start new stream? 
+    // based on some iostats maybe?
+    for (i = 0; i < streams; i++) {
+        curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + type);
 
-    if (__test_and_set_inuse_new_stream(sbi, type, &stream)) {
-        *new_stream = true;
-        f2fs_stream_info(sbi, "Alloc new stream for type: %u", type);
+        if (!mutex_is_locked(&curseg->curseg_mutex)) {
+            return i;
+        }
 
-        return stream;
+        /* If no stream available attempt to create a new stream
+         * if this fails go back to rechecking streams and do not
+         * attempt to create a new stream again.
+         */
+        if (i == streams - 1 && !maximum_streams_reached) {
+            if (__test_and_set_inuse_new_stream(sbi, type, &stream)) {
+                *new_stream = true;
+                f2fs_stream_info(sbi, "Alloc new stream for type: %u", type);
+
+                return stream;
+            }
+
+            maximum_streams_reached = true;
+        }
+
+        /* Restart checking at stream 0 (for loop increments 1 after this) */
+        if (i == streams - 1)
+            i = -1;
     }
+
 
     /* 
      * TODO: what will the default policy be? return first stream (return 0)
@@ -3653,7 +3666,9 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
 static unsigned int f2fs_allocate_data_block_get_stream(struct f2fs_sb_info *sbi, 
         int type, bool *new_stream)
 {
+#ifdef CONFIG_F2FS_MULTI_STREAM_FF
     return __get_first_fit_policy_stream(sbi, type, new_stream);
+#endif
 }
 
 #endif
