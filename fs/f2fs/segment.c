@@ -3662,13 +3662,16 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
      */
     return streams - 1;
 }
+#endif
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
 static unsigned int f2fs_allocate_data_block_get_stream(struct f2fs_sb_info *sbi, 
         int type, bool *new_stream)
 {
 #ifdef CONFIG_F2FS_MULTI_STREAM_FF
     return __get_first_fit_policy_stream(sbi, type, new_stream);
 #endif
+    return 0;
 }
 
 #endif

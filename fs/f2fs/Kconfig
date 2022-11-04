@@ -151,6 +151,7 @@ config F2FS_UNFAIR_RWSEM
 	  Use unfair rw_semaphore, if system configured IO priority by block
 	  cgroup.
 
+
 config F2FS_MULTI_STREAM
     bool "F2FS multiple concurrent streams per log type (EXPERIMENTAL)"
     depends on F2FS_FS 
@@ -159,12 +160,19 @@ config F2FS_MULTI_STREAM
         Experimental implementation that, instead of using 3 data logs 
         (hot/warm/cold) and 3 node logs (hot/warm/cold), it allows using
         multiple streams for each log type. A total up to 16 collective
-        (for all types) streams is supported. 
+        (for all types) streams is supported.
 
-config F2FS_MULTI_STREAM_FF
-    bool "First Fit Stream Allocation"
+choice
+    prompt "Stream Alloaction Policy"
     depends on F2FS_MULTI_STREAM
-    default y
+    default F2FS_MULT_STREAM_FF_DEFAULT
+    help
+        Select a stream allocation policy. Options include First Fit Stream
+        Allocation and Static Stream Allocation.
+
+config F2FS_MULT_STREAM_FF_DEFAULT
+    bool "First Fit"
+    select F2FS_MULTI_STREAM_FF
     help
         Use First Fit allocation for data into streams of a log type. Iterate
         over available streams for a type, select the first one that is idle
@@ -172,3 +180,27 @@ config F2FS_MULTI_STREAM_FF
         total number of active streams, for all types, has not reached the
         maximum configured number of active streams. If no stream can be opened
         the first stream is selected.
+
+config F2FS_MULTI_STREAM_STATIC_RR_DEFAULT
+    bool "Static Round Robin"
+    select F2FS_MULTI_STREAM_STATIC
+    select F2FS_MULTI_STREAM_STATIC_RR
+    help
+        Use static stream allocation by assigning the maximum number of streams
+        per type (hot/warm/cold for each: data and node) at mount time. This
+        option is passed with TODO: Add this
+        Allocate static streams in Round Robin fashion under the available streams
+        for a type. If just a single stream is present for a type, only this stream 
+        is used. By default a single stream is allocated per type.
+        The cumulative total of streams cannot be higher than 16, and at least
+        1 stream per type must be given, hence the maximum streams for a single
+        type is 11. The default allocation policy across available streams is 
+        Round Robin.
+endchoice
+
+config F2FS_MULTI_STREAM_POLICY
+    string
+    depends on F2FS_MULTI_STREAM
+    default "FIRST_FIT" if F2FS_MULT_STREAM_FF_DEFAULT
+    default "STATIC_RR" if F2FS_MULTI_STREAM_STATIC_RR_DEFAULT
+    default ""
