@@ -442,7 +442,14 @@ static int stat_show(struct seq_file *s, void *v)
                 si->nr_max_streams);
         seq_printf(s, "  - Active Streams: %u\n",
                 si->nr_active_streams);
-        seq_printf(s, "  - STREAMS: [ %2u %2u %2u %2u %2u %2u  ]\n",
+        seq_printf(s, "  - STREAMS:\n        Maximum:  [ %2u %2u %2u %2u %2u %2u  ]\n",
+                F2FS_OPTION(si->sbi).nr_streams[CURSEG_HOT_DATA],
+                F2FS_OPTION(si->sbi).nr_streams[CURSEG_WARM_DATA],
+                F2FS_OPTION(si->sbi).nr_streams[CURSEG_COLD_DATA],
+                F2FS_OPTION(si->sbi).nr_streams[CURSEG_HOT_NODE],
+                F2FS_OPTION(si->sbi).nr_streams[CURSEG_WARM_NODE],
+                F2FS_OPTION(si->sbi).nr_streams[CURSEG_COLD_NODE]);
+        seq_printf(s, "         Active:  [ %2u %2u %2u %2u %2u %2u  ]\n",
                 __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA),
                 __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_DATA),
                 __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_DATA),

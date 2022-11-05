@@ -526,17 +526,34 @@ static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
         unsigned int type, unsigned int *stream)
 {
     bool new_stream = true;
+    unsigned int streams = 0;
 
 	spin_lock(&sbi->streammap_lock);
-    f2fs_info(sbi, "MAX_STREAMS %u", sbi->nr_max_streams);
-    if (atomic_read(&sbi->nr_active_streams) < sbi->nr_max_streams) {
-        *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
-        set_bit_le(*stream, sbi->streammap[type]);
-        atomic_inc(&sbi->nr_active_streams);
-        f2fs_info(sbi, "Alloc new stream <type stream>: <%u %u>", type, *stream);
+
+    if (F2FS_OPTION(sbi).set_arg_nr_max_streams) {
+        if (atomic_read(&sbi->nr_active_streams) < sbi->nr_max_streams) {
+            *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
+            set_bit_le(*stream, sbi->streammap[type]);
+            atomic_inc(&sbi->nr_active_streams);
+            f2fs_info(sbi, "Alloc new stream with total max <type stream>: <%u %u>", type, *stream);
+        } else {
+            // TODO remove
+            f2fs_info(sbi, "REACHED MAX STREAMS WITH STREAMS ARG");
+            new_stream = false;
+        }
     } else {
-        new_stream = false;
-    }
+        streams = find_next_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS, 0);
+        if (streams < F2FS_OPTION(sbi).nr_streams[type]) {
+            *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
+            set_bit_le(*stream, sbi->streammap[type]);
+            atomic_inc(&sbi->nr_active_streams);
+            f2fs_info(sbi, "Alloc new stream with per stream max <type stream>: <%u %u>", type, *stream);
+        } else {
+            // TODO remove
+            f2fs_info(sbi, "REACHED MAX STREAMS PER STREAM ARG");
+            new_stream = false;
+        }
+    } 
 
     spin_unlock(&sbi->streammap_lock);
 

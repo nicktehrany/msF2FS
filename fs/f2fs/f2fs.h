@@ -188,9 +188,11 @@ struct f2fs_mount_info {
 	unsigned char extensions[COMPRESS_EXT_NUM][F2FS_EXTENSION_LEN];	/* extensions */
 	unsigned char noextensions[COMPRESS_EXT_NUM][F2FS_EXTENSION_LEN]; /* extensions */
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    uint nr_max_streams;
-#endif
-#ifdef CONFIG_F2FS_MULTI_STREAM
+    uint arg_nr_max_streams; /* if user provides single number of max streams argument */
+    uint nr_max_streams; /* if user provided max streams per type we accummulate during 
+                            options parsing */
+    bool set_arg_nr_max_streams; /* indicate user provided single max streams */
+    bool set_arg_per_stream_max; /* indicate user provided per stream maximums */
     uint nr_streams[NR_CURSEG_TYPE];
 #endif
 };
