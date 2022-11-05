@@ -2222,12 +2222,15 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
     atomic_set(&sbi->nr_active_streams, 0);
 	spin_unlock(&sbi->streammap_lock);
 
-    sbi->nr_max_streams = F2FS_OPTION(sbi).arg_nr_max_streams;
+    if (F2FS_OPTION(sbi).set_arg_nr_max_streams || F2FS_OPTION(sbi).set_arg_per_stream_max) {
+        sbi->nr_max_streams = F2FS_OPTION(sbi).arg_nr_max_streams;
+    } else {
+        sbi->nr_max_streams = NR_CURSEG_PERSIST_TYPE;
+    }
 
     if (F2FS_OPTION(sbi).set_arg_nr_max_streams) {
         for (i = 0; i <= CURSEG_COLD_NODE; i++)
-            /* MAX_ACTIVE_LOGS - at least one log per type */ 
-            F2FS_OPTION(sbi).nr_streams[i] = MAX_ACTIVE_LOGS - CURSEG_COLD_NODE; 
+            F2FS_OPTION(sbi).nr_streams[i] = F2FS_OPTION(sbi).nr_max_streams - CURSEG_COLD_NODE; 
     } 
 
     return 0;
@@ -3847,11 +3850,6 @@ static void init_sb_info(struct f2fs_sb_info *sbi)
 
 	for (i = 0; i < META; i++)
 		atomic_set(&sbi->wb_sync_req[i], 0);
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    if (F2FS_OPTION(sbi).nr_max_streams != 0)
-        sbi->nr_max_streams = F2FS_OPTION(sbi).nr_max_streams;
-#endif
 
 	INIT_LIST_HEAD(&sbi->s_list);
 	mutex_init(&sbi->umount_mutex);
