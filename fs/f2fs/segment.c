@@ -3606,13 +3606,7 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 static unsigned int __get_stream_round_robin_policy(struct f2fs_sb_info *sbi, 
         unsigned int type)
 {
-    int i = 0;
-    unsigned int stream;
-    struct curseg_info *curseg;
-    bool maximum_streams_reached = false;
-    int streams = __get_number_active_streams_for_type(sbi, type);
-
-    return 0;
+    return __get_current_stream_and_set_next_stream_active(sbi, type);
 }
 #endif
 
@@ -4984,11 +4978,11 @@ static int __init_curseg_stream(struct f2fs_sb_info *sbi, unsigned int type,
 
     __init_sit_entry_stream(sbi, curseg->segno, stream);
 
-	new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
+	/* new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg); */
 
-	f2fs_bug_on(sbi, curseg->next_blkoff >= sbi->blocks_per_seg);
+	/* f2fs_bug_on(sbi, curseg->next_blkoff >= sbi->blocks_per_seg); */
 
-	f2fs_wait_discard_bio(sbi, new_blkaddr);
+	/* f2fs_wait_discard_bio(sbi, new_blkaddr); */
 
 	/*
 	 * __add_sum_entry should be resided under the curseg_mutex
@@ -4998,24 +4992,24 @@ static int __init_curseg_stream(struct f2fs_sb_info *sbi, unsigned int type,
     // TODO:
 	/* __add_sum_entry(sbi, type, sum, stream); */
 
-	__refresh_next_blkoff(sbi, curseg);
+	/* __refresh_next_blkoff(sbi, curseg); */
 
-	stat_inc_block_count(sbi, curseg);
+	/* stat_inc_block_count(sbi, curseg); */
 
-    update_segment_mtime(sbi, new_blkaddr, 0);
+    /* update_segment_mtime(sbi, new_blkaddr, 0); */
 
 	/*
 	 * SIT information should be updated before segment allocation,
 	 * since SSR needs latest valid block information.
 	 */
-	update_sit_entry(sbi, new_blkaddr, 1);
+	/* update_sit_entry(sbi, new_blkaddr, 1); */
 
 	/*
 	 * segment dirty status should be updated after segment allocation,
 	 * so we just need to update status only one time after previous
 	 * segment being closed.
 	 */
-	locate_dirty_segment(sbi, GET_SEGNO(sbi, new_blkaddr));
+	/* locate_dirty_segment(sbi, GET_SEGNO(sbi, new_blkaddr)); */
 
 	up_write(&sit_i->sentry_lock);
 

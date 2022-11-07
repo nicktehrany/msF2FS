@@ -1848,6 +1848,8 @@ struct f2fs_sb_info {
     atomic_t nr_active_streams;
     spinlock_t streammap_lock;
     unsigned long **streammap;
+    spinlock_t rr_active_stream_lock[NR_CURSEG_TYPE];
+    atomic_t rr_active_stream[NR_CURSEG_TYPE];
 #endif
 };
 

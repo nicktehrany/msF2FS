@@ -2234,6 +2234,11 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
             F2FS_OPTION(sbi).nr_streams[i] = F2FS_OPTION(sbi).nr_max_streams - CURSEG_COLD_NODE; 
     } 
 
+    for (i = 0; i <= CURSEG_COLD_NODE; i++) {
+        atomic_set(&sbi->rr_active_stream[i], 0);
+    spin_lock_init(&sbi->rr_active_stream_lock[i]);
+    }
+
     return 0;
 }
 #endif
