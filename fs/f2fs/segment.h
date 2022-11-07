@@ -535,6 +535,7 @@ static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
             *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
             set_bit_le(*stream, sbi->streammap[type]);
             atomic_inc(&sbi->nr_active_streams);
+            // TODO remove
             f2fs_info(sbi, "Alloc new stream with total max <type stream>: <%u %u>", type, *stream);
         } else {
             // TODO remove
@@ -547,6 +548,7 @@ static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
             *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
             set_bit_le(*stream, sbi->streammap[type]);
             atomic_inc(&sbi->nr_active_streams);
+            // TODO remove
             f2fs_info(sbi, "Alloc new stream with per stream max <type stream>: <%u %u>", type, *stream);
         } else {
             // TODO remove
@@ -582,12 +584,6 @@ static inline unsigned int __get_number_active_streams_for_type(struct f2fs_sb_i
 	spin_unlock(&sbi->streammap_lock);
 
     return streams;
-}
-
-static inline void get_stream_type_bitmap(struct f2fs_sb_info *sbi,
-		void *dst_addr, unsigned int type)
-{
-	memcpy(dst_addr, sbi->streammap[type], sizeof(unsigned short));
 }
 #endif
 

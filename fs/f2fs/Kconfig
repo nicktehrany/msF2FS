@@ -155,6 +155,7 @@ config F2FS_UNFAIR_RWSEM
 config F2FS_MULTI_STREAM
     bool "F2FS multiple concurrent streams per log type (EXPERIMENTAL)"
     depends on F2FS_FS 
+    depends on BLK_DEV_ZONED
     help
         Experimental implementation that, instead of using 3 data logs 
         (hot/warm/cold) and 3 node logs (hot/warm/cold), it allows using
@@ -167,3 +168,6 @@ config F2FS_MULTI_STREAM
         streams. If no option is provided for a type, this type will default 
         to a maximum 1 strea. Providing streams=X is mutually exclusive 
         with providing individual stream maximas. // TODO explain stream allocation
+        This is intended for use with ZNS devices, and currently may not work
+        on conventional SSD, as features such as SSR are not possible on ZNS
+        they have not been tested.

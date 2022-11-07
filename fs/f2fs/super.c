@@ -797,6 +797,8 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
 
             }
+            f2fs_info(sbi, "CURRENTLY NOT SUPPORTED");
+            return -EINVAL;
             F2FS_OPTION(sbi).arg_nr_max_streams = arg;
             F2FS_OPTION(sbi).set_arg_nr_max_streams = true;
             break;
@@ -2216,7 +2218,6 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 			return -ENOMEM;
 	}
 
-
     spin_lock_init(&sbi->streammap_lock);
 	spin_lock(&sbi->streammap_lock);
     atomic_set(&sbi->nr_active_streams, 0);
@@ -2229,7 +2230,7 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
     }
 
     if (F2FS_OPTION(sbi).set_arg_nr_max_streams) {
-        for (i = 0; i <= CURSEG_COLD_NODE; i++)
+        for (i = 0; i <= CURSEG_COLD_NODE; i++) 
             F2FS_OPTION(sbi).nr_streams[i] = F2FS_OPTION(sbi).nr_max_streams - CURSEG_COLD_NODE; 
     } 
 
@@ -4603,6 +4604,17 @@ try_onemore:
 		if (err)
 			goto free_meta;
 	}
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    if (F2FS_OPTION(sbi).set_arg_per_stream_max) {
+        /* We currently don't have checkpoints implemented, therefore
+         * treat new streas as if we were allocating new segmennts
+         */
+        err = build_curseg_streams(sbi);
+        if (err)
+            return err;
+    }
+#endif
 
 reset_checkpoint:
 	f2fs_init_inmem_curseg(sbi);

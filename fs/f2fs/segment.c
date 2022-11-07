@@ -3603,8 +3603,8 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi, 
-        int type, bool *new_stream)
+static unsigned int __get_stream_round_robin_policy(struct f2fs_sb_info *sbi, 
+        unsigned int type)
 {
     int i = 0;
     unsigned int stream;
@@ -3612,58 +3612,16 @@ static unsigned int __get_first_fit_policy_stream(struct f2fs_sb_info *sbi,
     bool maximum_streams_reached = false;
     int streams = __get_number_active_streams_for_type(sbi, type);
 
-    // TODO HARDCODED
-    if (__test_and_set_inuse_new_stream(sbi, type, &stream)) {
-        *new_stream = true;
-
-        return stream;
-    } else {
-        return streams - 1;
-    }
-
-    // TODO: this currently never actually happens even if under concurrency, can we have better decision making to start new stream? 
-    // based on some iostats maybe?
-    for (i = 0; i < streams; i++) {
-        curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + type);
-
-        if (!mutex_is_locked(&curseg->curseg_mutex)) {
-            return i;
-        }
-
-        /* If no stream available attempt to create a new stream
-         * if this fails go back to rechecking streams and do not
-         * attempt to create a new stream again.
-         */
-        if (i == streams - 1 && !maximum_streams_reached) {
-            if (__test_and_set_inuse_new_stream(sbi, type, &stream)) {
-                *new_stream = true;
-
-                return stream;
-            }
-
-            maximum_streams_reached = true;
-        }
-
-        /* Restart checking at stream 0 (for loop increments 1 after this) */
-        if (i == streams - 1)
-            i = -1;
-    }
-
-
-    /* 
-     * TODO: what will the default policy be? return first stream (return 0)
-     * or last allocated stream (return streams - 1) 
-     */
-    return streams - 1;
+    return 0;
 }
 #endif
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static unsigned int f2fs_allocate_data_block_get_stream(struct f2fs_sb_info *sbi, 
-        int type, bool *new_stream)
+static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
+        int type)
 {
-    return __get_first_fit_policy_stream(sbi, type, new_stream);
-    return 0;
+    // TODO: Here we have checks for different policies and return that
+    return __get_stream_round_robin_policy(sbi, type);
 }
 
 #endif
@@ -3686,7 +3644,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	struct seg_entry *se = NULL;
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    stream = f2fs_allocate_data_block_get_stream(sbi, type, &new_stream);
+    stream = f2fs_get_curseg_stream(sbi, type);
 
 	curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
 #endif
@@ -3702,13 +3660,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		sanity_check_seg_type(sbi, se->type);
 		f2fs_bug_on(sbi, IS_NODESEG(se->type));
 	}
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    if (new_stream) 
-        __allocate_new_section(sbi, type, true, stream);
-
-    __init_sit_entry_stream(sbi, curseg->segno, stream);
-#endif
 
 	*new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
 
@@ -5013,6 +4964,84 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 
 	return restore_curseg_summaries(sbi);
 }
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static int __init_curseg_stream(struct f2fs_sb_info *sbi, unsigned int type, 
+        unsigned int stream)
+{
+	struct sit_info *sit_i = SIT_I(sbi);
+    block_t new_blkaddr;
+    struct curseg_info *curseg;
+
+	curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
+
+	f2fs_down_read(&SM_I(sbi)->curseg_lock);
+
+	mutex_lock(&curseg->curseg_mutex);
+	down_write(&sit_i->sentry_lock);
+
+    __allocate_new_section(sbi, type, true, stream);
+
+    __init_sit_entry_stream(sbi, curseg->segno, stream);
+
+	new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
+
+	f2fs_bug_on(sbi, curseg->next_blkoff >= sbi->blocks_per_seg);
+
+	f2fs_wait_discard_bio(sbi, new_blkaddr);
+
+	/*
+	 * __add_sum_entry should be resided under the curseg_mutex
+	 * because, this function updates a summary entry in the
+	 * current summary block.
+	 */
+    // TODO:
+	/* __add_sum_entry(sbi, type, sum, stream); */
+
+	__refresh_next_blkoff(sbi, curseg);
+
+	stat_inc_block_count(sbi, curseg);
+
+    update_segment_mtime(sbi, new_blkaddr, 0);
+
+	/*
+	 * SIT information should be updated before segment allocation,
+	 * since SSR needs latest valid block information.
+	 */
+	update_sit_entry(sbi, new_blkaddr, 1);
+
+	/*
+	 * segment dirty status should be updated after segment allocation,
+	 * so we just need to update status only one time after previous
+	 * segment being closed.
+	 */
+	locate_dirty_segment(sbi, GET_SEGNO(sbi, new_blkaddr));
+
+	up_write(&sit_i->sentry_lock);
+
+	mutex_unlock(&curseg->curseg_mutex);
+
+	f2fs_up_read(&SM_I(sbi)->curseg_lock);
+
+    return 0;
+}
+
+int build_curseg_streams(struct f2fs_sb_info *sbi)
+{
+    int i, err;
+    unsigned int stream;
+
+    for (i = 0; i < NR_CURSEG_TYPE; i++) {
+        while (__test_and_set_inuse_new_stream(sbi, i, &stream)) {
+            err = __init_curseg_stream(sbi, i, stream);
+            if (err)
+                return err;
+        }
+    }    
+
+    return 0;
+}
+#endif
 
 static int build_sit_entries(struct f2fs_sb_info *sbi)
 {

@@ -3680,6 +3680,9 @@ int f2fs_fix_curseg_write_pointer(struct f2fs_sb_info *sbi);
 #endif
 int f2fs_check_write_pointer(struct f2fs_sb_info *sbi);
 int f2fs_build_segment_manager(struct f2fs_sb_info *sbi);
+#ifdef  CONFIG_F2FS_MULTI_STREAM
+int build_curseg_streams(struct f2fs_sb_info *sbi);
+#endif
 void f2fs_destroy_segment_manager(struct f2fs_sb_info *sbi);
 int __init f2fs_create_segment_manager_caches(void);
 void f2fs_destroy_segment_manager_caches(void);
