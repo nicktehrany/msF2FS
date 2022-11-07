@@ -67,6 +67,7 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 	int i;
 #ifdef CONFIG_F2FS_MULTI_STREAM
     int j;
+    unsigned int streams;
     struct curseg_info *curseg; 
 #endif
 
@@ -179,8 +180,9 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_F2FS_MULTI_STREAM
     si->nr_max_streams = sbi->nr_max_streams;
     si->nr_active_streams = __get_number_active_streams(sbi);
-    for (i = 0; i < sbi->nr_max_streams; i++) {
-        for (j = CURSEG_HOT_DATA; j < NR_CURSEG_TYPE; j++) {
+    for (i = CURSEG_HOT_DATA; i < NR_CURSEG_TYPE; i++) {
+        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA);
+        for (j = 0; j < streams; j++) {
             curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + j);
             si->curseg[i * NR_CURSEG_TYPE + j] = curseg->segno;
             si->cursec[i * NR_CURSEG_TYPE + j] = GET_SEC_FROM_SEG(sbi, curseg->segno);

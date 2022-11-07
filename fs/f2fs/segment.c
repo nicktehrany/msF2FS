@@ -2109,6 +2109,18 @@ static bool __mark_sit_entry_dirty(struct f2fs_sb_info *sbi, unsigned int segno)
 	return true;
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static void __set_sit_entry_type_and_stream(struct f2fs_sb_info *sbi, int type,
+					unsigned int segno, int modified, unsigned int stream)
+{
+	struct seg_entry *se = get_seg_entry(sbi, segno);
+
+	se->type = type;
+    se->stream = stream;
+	if (modified)
+		__mark_sit_entry_dirty(sbi, segno);
+}
+#else
 static void __set_sit_entry_type(struct f2fs_sb_info *sbi, int type,
 					unsigned int segno, int modified)
 {
@@ -2118,6 +2130,7 @@ static void __set_sit_entry_type(struct f2fs_sb_info *sbi, int type,
 	if (modified)
 		__mark_sit_entry_dirty(sbi, segno);
 }
+#endif
 
 static inline unsigned long long get_segment_mtime(struct f2fs_sb_info *sbi,
 								block_t blkaddr)
@@ -2473,6 +2486,9 @@ static void get_new_segment(struct f2fs_sb_info *sbi,
 	bool init = true;
 	int go_left = 0;
 	int i;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int j;
+#endif
 
 	spin_lock(&free_i->segmap_lock);
 
@@ -2525,9 +2541,18 @@ skip_left:
 		if (go_left && zoneno == 0)
 			goto got_it;
 	}
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	for (i = 0; i < NR_CURSEG_TYPE; i++) {
+        for (j = 0; j < __get_number_active_streams_for_type(sbi, i); j++) {
+            if (CURSEG_I(sbi, j * NR_CURSEG_TYPE + i)->zone == zoneno)
+                break;
+        }
+    }
+#else
 	for (i = 0; i < NR_CURSEG_TYPE; i++)
 		if (CURSEG_I(sbi, i)->zone == zoneno)
 			break;
+#endif
 
 	if (i < NR_CURSEG_TYPE) {
 		/* zone is in user, try another */
@@ -2571,7 +2596,8 @@ static void reset_curseg(struct f2fs_sb_info *sbi, int type, int modified,
 		SET_SUM_TYPE(sum_footer, SUM_TYPE_DATA);
 	if (IS_NODESEG(seg_type))
 		SET_SUM_TYPE(sum_footer, SUM_TYPE_NODE);
-	__set_sit_entry_type(sbi, seg_type, curseg->segno, modified);
+	__set_sit_entry_type_and_stream(sbi, seg_type, curseg->segno, 
+            modified, stream);
 }
 #else
 static void reset_curseg(struct f2fs_sb_info *sbi, int type, int modified)
@@ -4977,6 +5003,8 @@ static int __init_curseg_stream(struct f2fs_sb_info *sbi, unsigned int type,
     __allocate_new_section(sbi, type, true, stream);
 
     __init_sit_entry_stream(sbi, curseg->segno, stream);
+
+    __set_test_and_inuse(sbi, curseg->segno);
 
 	/* new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg); */
 
