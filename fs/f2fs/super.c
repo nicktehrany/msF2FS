@@ -107,6 +107,7 @@ enum {
     Opt_hot_node_streams,
     Opt_warm_node_streams,
     Opt_cold_node_streams,
+    Opt_rr_stride,
 	Opt_disable_ext_identify,
 	Opt_inline_xattr,
 	Opt_noinline_xattr,
@@ -189,6 +190,7 @@ static match_table_t f2fs_tokens = {
 	{Opt_hot_node_streams, "hot_node_streams=%u"},
 	{Opt_warm_node_streams, "warm_node_streams=%u"},
 	{Opt_cold_node_streams, "cold_node_streams=%u"},
+    {Opt_rr_stride, "rr_stride=%u"},
 	{Opt_disable_ext_identify, "disable_ext_identify"},
 	{Opt_inline_xattr, "inline_xattr"},
 	{Opt_noinline_xattr, "noinline_xattr"},
@@ -945,6 +947,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
             }
             F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_NODE] = arg;
             F2FS_OPTION(sbi).set_arg_per_stream_max = true;
+            break;
+        case Opt_rr_stride:
+			if (args->from && match_int(args, &arg))
+				return -EINVAL;
+            F2FS_OPTION(sbi).rr_stride = arg;
             break;
 #else
 			if (arg != 2 && arg != 4 &&
@@ -2236,7 +2243,8 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 
     for (i = 0; i <= CURSEG_COLD_NODE; i++) {
         atomic_set(&sbi->rr_active_stream[i], 0);
-    spin_lock_init(&sbi->rr_active_stream_lock[i]);
+        atomic_set(&sbi->rr_stride_ctr[i], 0);
+        spin_lock_init(&sbi->rr_active_stream_lock[i]);
     }
 
     return 0;
@@ -2260,6 +2268,7 @@ static void default_options(struct f2fs_sb_info *sbi)
     F2FS_OPTION(sbi).arg_nr_max_streams = 0;
     F2FS_OPTION(sbi).set_arg_nr_max_streams = false;
     F2FS_OPTION(sbi).set_arg_per_stream_max = false;
+    F2FS_OPTION(sbi).rr_stride = 1;
 
     for (i = 0; i <= CURSEG_COLD_NODE; i++)
        F2FS_OPTION(sbi).nr_streams[i] = 1; 

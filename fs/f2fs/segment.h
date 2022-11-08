@@ -578,18 +578,44 @@ static inline unsigned int __get_number_active_streams_for_type(struct f2fs_sb_i
     return streams;
 }
 
+/* 
+ * Increases the stride counter and returns true if the stride has reached the configured
+ * value, thus allowing to start writing at the next stream 
+ * 
+ * Function assumes the spinlock_t on rr_active_stream_lock is held by the calling
+ * function.
+ */
+static inline bool __test_and_update_rr_stride(struct f2fs_sb_info *sbi, unsigned int type)
+{
+   unsigned int rr_stride = 0; 
+
+   rr_stride = atomic_read(&sbi->rr_stride_ctr[type]);
+
+   if (rr_stride == F2FS_OPTION(sbi).rr_stride) {
+        atomic_set(&sbi->rr_stride_ctr[type], 0);
+        return true;
+   } else {
+        atomic_inc(&sbi->rr_stride_ctr[type]);
+        return false;
+   }
+}
+
 static inline unsigned int __get_current_stream_and_set_next_stream_active(struct f2fs_sb_info *sbi,
         unsigned int type)
 {
     unsigned int stream = 0;
+    bool next_stream = false;
 
 	spin_lock(&sbi->rr_active_stream_lock[type]);
     stream = atomic_read(&sbi->rr_active_stream[type]);
     if (stream == 0 && F2FS_OPTION(sbi).nr_streams[type] == 1) 
         goto unchanged;
-    if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1)
+
+    next_stream = __test_and_update_rr_stride(sbi, type);
+    if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1 &&
+            next_stream)
         atomic_set(&sbi->rr_active_stream[type], 0);
-    else
+    else if (next_stream)
         atomic_inc(&sbi->rr_active_stream[type]);
 
 unchanged:

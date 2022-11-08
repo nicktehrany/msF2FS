@@ -194,6 +194,7 @@ struct f2fs_mount_info {
     bool set_arg_nr_max_streams; /* indicate user provided single max streams */
     bool set_arg_per_stream_max; /* indicate user provided per stream maximums */
     uint nr_streams[NR_CURSEG_TYPE];
+    uint rr_stride;
 #endif
 };
 
@@ -1850,6 +1851,7 @@ struct f2fs_sb_info {
     unsigned long **streammap;
     spinlock_t rr_active_stream_lock[NR_CURSEG_TYPE];
     atomic_t rr_active_stream[NR_CURSEG_TYPE];
+    atomic_t rr_stride_ctr[NR_CURSEG_TYPE];
 #endif
 };
 

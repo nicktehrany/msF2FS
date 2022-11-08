@@ -167,7 +167,22 @@ config F2FS_MULTI_STREAM
         (with X number), and similarly for other hot/warm/cold data/node
         streams. If no option is provided for a type, this type will default 
         to a maximum 1 strea. Providing streams=X is mutually exclusive 
-        with providing individual stream maximas. // TODO explain stream allocation
-        This is intended for use with ZNS devices, and currently may not work
-        on conventional SSD, as features such as SSR are not possible on ZNS
-        they have not been tested.
+        with providing individual stream maximas. The default allocation is 
+        Round Robin, which rotates through the available streams of a type.
+        This can be further extended with strided round robin, which issues
+        stride number of write I/Os to a stream before going to the next stream,
+        in RR fashion. Stride is provided with -o rr_stride=X, with X number of 
+        strides per RR allocation. This is intended for use with ZNS devices, 
+        and currently may not work on conventional SSD, as features such as 
+        SSR are not possible on ZNS they have not been tested.
+
+config F2FS_MULTI_STREAM_IO_ALLOC
+    bool "Extend I/O mapping to index by stream and type (EXPERIMENTAL)"
+    depends on F2FS_MULTI_STREAM
+    default y
+    help
+        By default F2FS will index the I/O management based on the type (hot/warm/cold).
+        However, with multiple streams this means that I/Os in the list are not consecutive,
+        e.g., when using Round Robin allocation. This in turn means that I/Os cannot be
+        merged, which degrades performance. This adds the indexing of I/O management by the
+        type and the stream, thus allowing per stream + type merging of I/O.

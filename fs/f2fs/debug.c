@@ -489,6 +489,10 @@ static int stat_show(struct seq_file *s, void *v)
             }
             seq_printf(s, "]\n");
         }
+        seq_printf(s, "  - Stream Allocation:\n");
+        seq_printf(s, "         Policy: %13s", "Round Robin");
+        seq_printf(s, "         RR Stride: %u\n",
+                F2FS_OPTION(si->sbi).rr_stride);
 		seq_printf(s, "\n    TYPE     %8s %8s %8s %8s %10s %10s %10s\n",
 			   "STREAM", "segno", "secno", "zoneno", "dirty_seg", "full_seg", "valid_blk");
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA);
