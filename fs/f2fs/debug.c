@@ -67,7 +67,6 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 	int i;
 #ifdef CONFIG_F2FS_MULTI_STREAM
     int j;
-    unsigned int streams;
     struct curseg_info *curseg; 
 #endif
 
@@ -180,9 +179,8 @@ static void update_general_status(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_F2FS_MULTI_STREAM
     si->nr_max_streams = sbi->nr_max_streams;
     si->nr_active_streams = __get_number_active_streams(sbi);
-    for (i = CURSEG_HOT_DATA; i < NR_CURSEG_TYPE; i++) {
-        streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA);
-        for (j = 0; j < streams; j++) {
+    for (i = 0; i < sbi->nr_max_streams; i++) {
+        for (j = CURSEG_HOT_DATA; j < NR_CURSEG_TYPE; j++) {
             curseg = CURSEG_I(sbi, i * NR_CURSEG_TYPE + j);
             si->curseg[i * NR_CURSEG_TYPE + j] = curseg->segno;
             si->cursec[i * NR_CURSEG_TYPE + j] = GET_SEC_FROM_SEG(sbi, curseg->segno);
@@ -490,7 +488,7 @@ static int stat_show(struct seq_file *s, void *v)
             seq_printf(s, "]\n");
         }
         seq_printf(s, "  - Stream Allocation:\n");
-        seq_printf(s, "         Policy: %13s", "Round Robin");
+        seq_printf(s, "         Policy: %13s", "Round Robin\n");
         seq_printf(s, "         RR Stride: %u\n",
                 F2FS_OPTION(si->sbi).rr_stride);
 		seq_printf(s, "\n    TYPE     %8s %8s %8s %8s %10s %10s %10s\n",
@@ -498,7 +496,7 @@ static int stat_show(struct seq_file *s, void *v)
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA);
         for (i = 0; i < streams; i++)
         {
-            seq_printf(s, "  - HOT  data:  %4d %8d %8d %8d %10u %10u %10u\n",
+            seq_printf(s, "  - HOT  data:   %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
                     si->cursec[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
                     si->curzone[i * NR_CURSEG_TYPE + CURSEG_HOT_DATA],
@@ -509,7 +507,7 @@ static int stat_show(struct seq_file *s, void *v)
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_DATA);
         for (i = 0; i < streams; i++)
         {
-		seq_printf(s, "  - WARM data:  %4d %8d %8d %8d %10u %10u %10u\n",
+		seq_printf(s, "  - WARM data:   %4d %8d %8d %8d %10u %10u %10u\n",
 			   i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
 			   si->cursec[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
 			   si->curzone[i * NR_CURSEG_TYPE + CURSEG_WARM_DATA],
@@ -520,7 +518,7 @@ static int stat_show(struct seq_file *s, void *v)
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_DATA);
         for (i = 0; i < streams; i++)
         {
-            seq_printf(s, "  - COLD data:  %4d %8d %8d %8d %10u %10u %10u\n",
+            seq_printf(s, "  - COLD data:   %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
                     si->cursec[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
                     si->curzone[i * NR_CURSEG_TYPE + CURSEG_COLD_DATA],
@@ -531,7 +529,7 @@ static int stat_show(struct seq_file *s, void *v)
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_NODE);
         for (i = 0; i < streams; i++)
         {
-            seq_printf(s, "  - HOT  node:  %4d %8d %8d %8d %10u %10u %10u\n",
+            seq_printf(s, "  - HOT  node:   %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
                     si->cursec[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
                     si->curzone[i * NR_CURSEG_TYPE + CURSEG_HOT_NODE],
@@ -542,7 +540,7 @@ static int stat_show(struct seq_file *s, void *v)
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_NODE);
         for (i = 0; i < streams; i++)
         {
-		seq_printf(s, "  - WARM node:  %4d %8d %8d %8d %10u %10u %10u\n",
+		seq_printf(s, "  - WARM node:   %4d %8d %8d %8d %10u %10u %10u\n",
 			   i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
 			   si->cursec[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
 			   si->curzone[i * NR_CURSEG_TYPE + CURSEG_WARM_NODE],
@@ -553,7 +551,7 @@ static int stat_show(struct seq_file *s, void *v)
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_NODE);
         for (i = 0; i < streams; i++)
         {
-            seq_printf(s, "  - COLD node:  %4d %8d %8d %8d %10u %10u %10u\n",
+            seq_printf(s, "  - COLD node:   %4d %8d %8d %8d %10u %10u %10u\n",
                     i, si->curseg[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
                     si->cursec[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
                     si->curzone[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
@@ -561,11 +559,11 @@ static int stat_show(struct seq_file *s, void *v)
                     si->full_seg[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE],
                     si->valid_blks[i * NR_CURSEG_TYPE + CURSEG_COLD_NODE]);
         }
-        seq_printf(s, "  - Pinned file:     %8d %8d %8d\n",
+        seq_printf(s, "  - Pinned file:      %8d %8d %8d\n",
                 si->curseg[CURSEG_COLD_DATA_PINNED],
                 si->cursec[CURSEG_COLD_DATA_PINNED],
                 si->curzone[CURSEG_COLD_DATA_PINNED]);
-        seq_printf(s, "  - ATGC   data:     %8d %8d %8d\n",
+        seq_printf(s, "  - ATGC   data:      %8d %8d %8d\n",
                 si->curseg[CURSEG_ALL_DATA_ATGC],
                 si->cursec[CURSEG_ALL_DATA_ATGC],
                 si->curzone[CURSEG_ALL_DATA_ATGC]);
