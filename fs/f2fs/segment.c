@@ -3882,16 +3882,13 @@ static void do_write_page(struct f2fs_summary *sum, struct f2fs_io_info *fio)
 {
 	int type = __get_segment_type(fio);
 	bool keep_order = (f2fs_lfs_mode(fio->sbi) && type == CURSEG_COLD_DATA);
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned int stream;
-#endif
 
 	if (keep_order)
 		f2fs_down_read(&fio->sbi->io_order_lock);
 reallocate:
 #ifdef CONFIG_F2FS_MULTI_STREAM
 	f2fs_allocate_data_block(fio->sbi, fio->page, fio->old_blkaddr,
-			&fio->new_blkaddr, sum, type, fio, &stream);
+			&fio->new_blkaddr, sum, type, fio, &fio->stream);
 #else
 	f2fs_allocate_data_block(fio->sbi, fio->page, fio->old_blkaddr,
 			&fio->new_blkaddr, sum, type, fio);

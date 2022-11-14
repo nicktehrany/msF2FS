@@ -1799,15 +1799,15 @@ static void f2fs_put_super(struct super_block *sb)
 	fscrypt_free_dummy_policy(&F2FS_OPTION(sbi).dummy_enc_policy);
 	destroy_percpu_info(sbi);
 	f2fs_destroy_iostat(sbi);
-/* #ifdef CONFIG_F2FS_MULTI_STREAM */
-/*     for (j = 0; j < MAX_ACTIVE_LOGS; j++) { */
-/*         for (i = 0; i < NR_PAGE_TYPE; i++) */
-/*             kvfree(sbi->write_io[j + (MAX_ACTIVE_LOGS * i)]); */
-/*     } */
-/* #else */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    for (j = 0; j < MAX_ACTIVE_LOGS; j++) {
+        for (i = 0; i < NR_PAGE_TYPE; i++)
+            kvfree(sbi->write_io[j + (MAX_ACTIVE_LOGS * i)]);
+    }
+#else
 	for (i = 0; i < NR_PAGE_TYPE; i++)
 		kvfree(sbi->write_io[i]);
-/* #endif */
+#endif
 #if IS_ENABLED(CONFIG_UNICODE)
 	utf8_unload(sb->s_encoding);
 #endif
@@ -4753,8 +4753,8 @@ free_iostat:
 	f2fs_destroy_iostat(sbi);
 free_bio_info:
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    for (j = 0; j < MAX_ACTIVE_LOGS; j++) {
-        for (i = 0; i < NR_PAGE_TYPE; i++)
+    for (i = 0; i < NR_PAGE_TYPE; i++) {
+        for (j = 0; j < MAX_ACTIVE_LOGS; j++)
             kvfree(sbi->write_io[j + (MAX_ACTIVE_LOGS * i)]);
     }
 #else

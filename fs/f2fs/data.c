@@ -688,6 +688,7 @@ static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
 #ifdef CONFIG_F2FS_MULTI_STREAM
     int i;
 
+    // TODO in the end only flush what is needed
     for (i = 0; i < MAX_ACTIVE_LOGS; i++) {
         for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
             /* META (SIT, NAT, etc.) is only in stream 0 */
