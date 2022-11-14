@@ -363,6 +363,18 @@ static inline unsigned int __get_number_active_streams(struct f2fs_sb_info *sbi)
     return streams;
 }
 
+static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int stream)
+{
+    bool is_bit_set = false;
+
+	spin_lock(&sbi->streammap_lock);
+	is_bit_set = test_bit_le(stream, sbi->streammap[type]);
+	spin_unlock(&sbi->streammap_lock);
+
+    return is_bit_set;
+}
+
 static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
 {
     int stream, type;
@@ -370,8 +382,7 @@ static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
 
     for (stream = 0; stream < active_streams; stream++) {
         for (type = 0; type < NR_CURSEG_TYPE; type++) {
-            if (__test_inuse_stream(sbi, type, stream) && 
-                    segno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno)) 
+            if (segno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno)) 
                 return 1;
         }
     }
@@ -386,7 +397,7 @@ static int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
 
     for (stream = 0; stream < active_streams; stream++) {
         for (type = 0; type < NR_CURSEG_TYPE; type++) {
-            if (__test_inuse_stream(sbi, type, stream) && secno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno / 
+            if (secno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno / 
                         sbi->segs_per_sec)) 
                 return 1;
         }
@@ -555,18 +566,6 @@ static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
     return new_stream;
 }
 
-static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
-        unsigned int type, unsigned int stream)
-{
-    bool is_bit_set = false;
-
-	spin_lock(&sbi->streammap_lock);
-	is_bit_set = test_bit_le(stream, sbi->streammap[type]);
-	spin_unlock(&sbi->streammap_lock);
-
-    return is_bit_set;
-}
-
 static inline unsigned int __get_number_active_streams_for_type(struct f2fs_sb_info *sbi,
         unsigned int type)
 {
@@ -593,10 +592,15 @@ static inline bool __test_and_update_rr_stride(struct f2fs_sb_info *sbi, unsigne
    rr_stride = atomic_read(&sbi->rr_stride_ctr[type]);
 
    if (rr_stride == F2FS_OPTION(sbi).rr_stride) {
+        /* reset counter for current stream */
         atomic_set(&sbi->rr_stride_ctr[type], 0);
+        /* increment counter for new write on next stream */
+        atomic_inc(&sbi->rr_stride_ctr[type]);
+
         return true;
    } else {
         atomic_inc(&sbi->rr_stride_ctr[type]);
+
         return false;
    }
 }
@@ -609,15 +613,19 @@ static inline unsigned int __get_current_stream_and_set_next_stream_active(struc
 
 	spin_lock(&sbi->rr_active_stream_lock[type]);
     stream = atomic_read(&sbi->rr_active_stream[type]);
-    if (stream == 0 && F2FS_OPTION(sbi).nr_streams[type] == 1) 
+
+    /* Only a single stream, no need for doing RR */
+    if (F2FS_OPTION(sbi).nr_streams[type] == 1) 
         goto unchanged;
 
     next_stream = __test_and_update_rr_stride(sbi, type);
-    if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1 &&
-            next_stream)
+    if (next_stream && stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
         atomic_set(&sbi->rr_active_stream[type], 0);
-    else if (next_stream)
+        stream = 0;
+    } else if (next_stream) {
         atomic_inc(&sbi->rr_active_stream[type]);
+        stream++;
+    }
 
 unchanged:
 	spin_unlock(&sbi->rr_active_stream_lock[type]);
