@@ -35,7 +35,11 @@ static struct kmem_cache *bio_entry_slab;
 static mempool_t *bio_post_read_ctx_pool;
 static struct bio_set f2fs_bioset;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+#define	F2FS_BIO_POOL_SIZE	(NR_CURSEG_TYPE * MAX_ACTIVE_LOGS)
+#else
 #define	F2FS_BIO_POOL_SIZE	NR_CURSEG_TYPE
+#endif
 
 int __init f2fs_init_bioset(void)
 {
