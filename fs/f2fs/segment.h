@@ -382,7 +382,8 @@ static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
 
     for (stream = 0; stream < active_streams; stream++) {
         for (type = 0; type < NR_CURSEG_TYPE; type++) {
-            if (segno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno)) 
+            if (__test_inuse_stream(sbi, type, stream) && 
+                    segno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno)) 
                 return 1;
         }
     }
@@ -397,7 +398,7 @@ static int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
 
     for (stream = 0; stream < active_streams; stream++) {
         for (type = 0; type < NR_CURSEG_TYPE; type++) {
-            if (secno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno / 
+            if (__test_inuse_stream(sbi, type, stream) && secno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno / 
                         sbi->segs_per_sec)) 
                 return 1;
         }
