@@ -3894,7 +3894,6 @@ struct f2fs_stat_info {
 	int tot_blks, data_blks, node_blks;
 	int bg_data_blks, bg_node_blks;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    // TODO need a mutex for these ops
     int nr_max_streams; /* user specified maximum active streams */
     int nr_active_streams; /* currently active streams */
 	int curseg[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];

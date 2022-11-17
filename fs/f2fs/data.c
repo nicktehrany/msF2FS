@@ -692,17 +692,14 @@ static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
 #ifdef CONFIG_F2FS_MULTI_STREAM
     int i;
 
-    // TODO in the end only flush what is needed
-    for (i = 0; i < MAX_ACTIVE_LOGS; i++) {
-        for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
+    for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
+        for (i = 0; i < MAX_ACTIVE_LOGS; i++) {
             /* META (SIT, NAT, etc.) is only in stream 0 */
             if (type >= META && i >= 1)
                 break;
 
-            /* If stream does not exist (not active) skip it */
-            if (type == DATA && !__test_inuse_stream(sbi, temp, i))
-                break;
-            if (type == NODE && !__test_inuse_stream(sbi, temp + NR_TEMP_TYPE, i))
+            /* If stream is not active skip checking all other streams for this type */
+            if (type < META && !__test_inuse_stream(sbi, temp + (type * NR_TEMP_TYPE), i))
                 break;
 
             if (!force)	{
@@ -715,11 +712,11 @@ static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
             }
             if (ret)
                 __f2fs_submit_merged_write(sbi, type, temp, i);
-
-            /* TODO: use HOT temp only for meta pages now. */
-            if (type >= META)
-                break;
         }
+
+        /* TODO: use HOT temp only for meta pages now. */
+        if (type >= META)
+            break;
     }
 #else
 	for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
