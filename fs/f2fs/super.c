@@ -879,6 +879,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_hot_node_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
+            /* TODO: For now disable more than 1 stream */
+            if (arg > 1)
+            {
+                f2fs_info(sbi, "Invalid hot node streams %u Currently maximum 1 is supported", arg);
+                return -EINVAL;
+            }
             if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
             {
                 f2fs_info(sbi, "Invalid hot node streams: %u must be at least 1 up to 11", arg);
@@ -903,6 +909,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_warm_node_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
+            /* TODO: For now disable more than 1 stream */
+            if (arg > 1)
+            {
+                f2fs_info(sbi, "Invalid hot warm streams %u Currently maximum 1 is supported", arg);
+                return -EINVAL;
+            }
             if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
             {
                 f2fs_info(sbi, "Invalid warm node streams: %u must be at least 1 up to 11", arg);
@@ -927,6 +939,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_cold_node_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
+            /* TODO: For now disable more than 1 stream */
+            if (arg > 1)
+            {
+                f2fs_info(sbi, "Invalid cold warm streams %u Currently maximum 1 is supported", arg);
+                return -EINVAL;
+            }
             if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
             {
                 f2fs_info(sbi, "Invalid cold node streams: %u must be at least 1 up to 11", arg);
