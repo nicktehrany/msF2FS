@@ -2944,7 +2944,9 @@ static void __f2fs_init_atgc_curseg(struct f2fs_sb_info *sbi)
 	down_write(&SIT_I(sbi)->sentry_lock);
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    // TODO: fix this if wrong
+    /* TODO: SSR would not work on ZNS, so we don't support it but add this to
+     * avoid compile issues 
+     */
 	get_atssr_segment(sbi, CURSEG_ALL_DATA_ATGC, CURSEG_COLD_DATA, SSR, 0, 0);
 #else
 	get_atssr_segment(sbi, CURSEG_ALL_DATA_ATGC, CURSEG_COLD_DATA, SSR, 0);
@@ -3640,7 +3642,6 @@ static unsigned int __get_stream_round_robin_policy(struct f2fs_sb_info *sbi,
 static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
         int type)
 {
-    // TODO: Here we have checks for different policies and return that
     return __get_stream_round_robin_policy(sbi, type);
 }
 
@@ -3920,7 +3921,10 @@ void f2fs_do_write_meta_page(struct f2fs_sb_info *sbi, struct page *page,
 		.type = META,
 		.temp = HOT,
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        .stream = 0, // TODO now we force meta on stream 0, needs fixing in checkpoint
+        /* TODO: currently we only use streams for DATA, hence META is pinned to stream 0.
+         * we can use multiple streams for meta but that requires versioning for e.g., inodes
+         */
+        .stream = 0, 
 #endif
 		.op = REQ_OP_WRITE,
 		.op_flags = REQ_SYNC | REQ_META | REQ_PRIO,
@@ -4099,7 +4103,7 @@ void f2fs_do_replace_block(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	if (segno != curseg->segno) {
 		curseg->next_segno = segno;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        // TODO: hardcoding replace to first stream for now
+        /* TODO: Currently no support for block replacing */
 		change_curseg(sbi, type, true, 0);
 #else
 		change_curseg(sbi, type, true);
@@ -4108,7 +4112,7 @@ void f2fs_do_replace_block(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 
 	curseg->next_blkoff = GET_BLKOFF_FROM_SEG0(sbi, new_blkaddr);
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        // TODO: hardcoding replace to first stream for now
+        /* TODO: Currently no support for block replacing */
     __add_sum_entry(sbi, type, sum, 0);
 #else
     __add_sum_entry(sbi, type, sum);
@@ -4136,8 +4140,8 @@ void f2fs_do_replace_block(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	if (recover_curseg) {
 		if (old_cursegno != curseg->segno) {
 			curseg->next_segno = old_cursegno;
-            // TODO: hardcoding replace to first stream for now
 #ifdef CONFIG_F2FS_MULTI_STREAM
+            /* TODO: Currently no support for block replacing */
             change_curseg(sbi, type, true, 0);
 #else
             change_curseg(sbi, type, true);
@@ -4248,7 +4252,9 @@ static int read_compacted_summaries(struct f2fs_sb_info *sbi)
 		blk_off = le16_to_cpu(ckpt->cur_data_blkoff[i]);
 		seg_i->next_segno = segno;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        // TODO: hardcoding reset to first stream for now
+        /* TODO: summaries are currently not supported for streams, therefore
+         * only use summaries on stream 0 (default implementation)
+         */
 		reset_curseg(sbi, i, 0, 0);
 #else
 		reset_curseg(sbi, i, 0);
@@ -5092,39 +5098,6 @@ static int __init_curseg_stream(struct f2fs_sb_info *sbi, unsigned int type,
     __init_sit_entry_stream(sbi, curseg->segno, stream);
 
     __set_test_and_inuse(sbi, curseg->segno);
-
-	/* new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg); */
-
-	/* f2fs_bug_on(sbi, curseg->next_blkoff >= sbi->blocks_per_seg); */
-
-	/* f2fs_wait_discard_bio(sbi, new_blkaddr); */
-
-	/*
-	 * __add_sum_entry should be resided under the curseg_mutex
-	 * because, this function updates a summary entry in the
-	 * current summary block.
-	 */
-    // TODO:
-	/* __add_sum_entry(sbi, type, sum, stream); */
-
-	/* __refresh_next_blkoff(sbi, curseg); */
-
-	/* stat_inc_block_count(sbi, curseg); */
-
-    /* update_segment_mtime(sbi, new_blkaddr, 0); */
-
-	/*
-	 * SIT information should be updated before segment allocation,
-	 * since SSR needs latest valid block information.
-	 */
-	/* update_sit_entry(sbi, new_blkaddr, 1); */
-
-	/*
-	 * segment dirty status should be updated after segment allocation,
-	 * so we just need to update status only one time after previous
-	 * segment being closed.
-	 */
-	/* locate_dirty_segment(sbi, GET_SEGNO(sbi, new_blkaddr)); */
 
 	up_write(&sit_i->sentry_lock);
 

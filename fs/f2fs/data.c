@@ -3927,7 +3927,9 @@ static int f2fs_migrate_blocks(struct inode *inode, block_t start_blk,
 
 		f2fs_lock_op(sbi);
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        // TODO: hardcoding to first stream for now
+        /* TODO: Currently swap is not supported in streams, therefore we 
+         * pin all swap work to stream 0
+         */
 		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false, 0);
 #else
 		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false);

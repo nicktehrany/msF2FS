@@ -789,9 +789,11 @@ next:
 		f2fs_ra_meta_pages_cond(sbi, blkaddr, ra_blocks);
 	}
     
-    // TODO: hardcoding to first stream for now
 	if (!err)
 #ifdef CONFIG_F2FS_MULTI_STREAM
+        /* TODO: Recovery for streams is currently not supported, therefore
+         * use deault implementation on only stream 0
+         */
 		f2fs_allocate_new_segments(sbi, 0);
 #else
 		f2fs_allocate_new_segments(sbi);

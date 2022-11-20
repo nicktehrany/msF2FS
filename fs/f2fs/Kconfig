@@ -175,14 +175,3 @@ config F2FS_MULTI_STREAM
         strides per RR allocation. This is intended for use with ZNS devices, 
         and currently may not work on conventional SSD, as features such as 
         SSR are not possible on ZNS they have not been tested.
-
-config F2FS_MULTI_STREAM_IO_ALLOC
-    bool "Extend I/O mapping to index by stream and type (EXPERIMENTAL)"
-    depends on F2FS_MULTI_STREAM
-    default y
-    help
-        By default F2FS will index the I/O management based on the type (hot/warm/cold).
-        However, with multiple streams this means that I/Os in the list are not consecutive,
-        e.g., when using Round Robin allocation. This in turn means that I/Os cannot be
-        merged, which degrades performance. This adds the indexing of I/O management by the
-        type and the stream, thus allowing per stream + type merging of I/O.
