@@ -1193,6 +1193,9 @@ struct f2fs_io_info {
 	nid_t ino;		/* inode number */
 	enum page_type type;	/* contains DATA/NODE/META/META_FLUSH */
 	enum temp_type temp;	/* contains HOT/WARM/COLD */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    uint stream;
+#endif
 	int op;			/* contains REQ_OP_ */
 	int op_flags;		/* req_flag_bits */
 	block_t new_blkaddr;	/* new block address to be written */
@@ -1619,7 +1622,11 @@ struct f2fs_sb_info {
 	struct f2fs_sm_info *sm_info;		/* segment manager */
 
 	/* for bio operations */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    struct f2fs_bio_info *write_io[NR_PAGE_TYPE * MAX_ACTIVE_LOGS];	/* for write bios */
+#else
 	struct f2fs_bio_info *write_io[NR_PAGE_TYPE];	/* for write bios */
+#endif
 	/* keep migration IO order for LFS mode */
 	struct f2fs_rwsem io_order_lock;
 	mempool_t *write_io_dummy;		/* Dummy pages */
@@ -3661,10 +3668,17 @@ void f2fs_replace_block(struct f2fs_sb_info *sbi, struct dnode_of_data *dn,
 			block_t old_addr, block_t new_addr,
 			unsigned char version, bool recover_curseg,
 			bool recover_newaddr);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
+			block_t old_blkaddr, block_t *new_blkaddr,
+			struct f2fs_summary *sum, int type,
+			struct f2fs_io_info *fio, unsigned int *stream);
+#else
 void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 			block_t old_blkaddr, block_t *new_blkaddr,
 			struct f2fs_summary *sum, int type,
 			struct f2fs_io_info *fio);
+#endif
 void f2fs_update_device_state(struct f2fs_sb_info *sbi, nid_t ino,
 					block_t blkaddr, unsigned int blkcnt);
 void f2fs_wait_on_page_writeback(struct page *page,
@@ -3880,7 +3894,6 @@ struct f2fs_stat_info {
 	int tot_blks, data_blks, node_blks;
 	int bg_data_blks, bg_node_blks;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    // TODO need a mutex for these ops
     int nr_max_streams; /* user specified maximum active streams */
     int nr_active_streams; /* currently active streams */
 	int curseg[MAX_ACTIVE_LOGS * NR_CURSEG_TYPE];

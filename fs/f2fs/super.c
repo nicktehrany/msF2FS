@@ -879,6 +879,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_hot_node_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
+            /* TODO: For now disable more than 1 stream */
+            if (arg > 1)
+            {
+                f2fs_info(sbi, "Invalid hot node streams %u Currently maximum 1 is supported", arg);
+                return -EINVAL;
+            }
             if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
             {
                 f2fs_info(sbi, "Invalid hot node streams: %u must be at least 1 up to 11", arg);
@@ -903,6 +909,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_warm_node_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
+            /* TODO: For now disable more than 1 stream */
+            if (arg > 1)
+            {
+                f2fs_info(sbi, "Invalid hot warm streams %u Currently maximum 1 is supported", arg);
+                return -EINVAL;
+            }
             if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
             {
                 f2fs_info(sbi, "Invalid warm node streams: %u must be at least 1 up to 11", arg);
@@ -927,6 +939,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_cold_node_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
+            /* TODO: For now disable more than 1 stream */
+            if (arg > 1)
+            {
+                f2fs_info(sbi, "Invalid cold warm streams %u Currently maximum 1 is supported", arg);
+                return -EINVAL;
+            }
             if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
             {
                 f2fs_info(sbi, "Invalid cold node streams: %u must be at least 1 up to 11", arg);
@@ -1703,6 +1721,9 @@ static void f2fs_put_super(struct super_block *sb)
 	struct f2fs_sb_info *sbi = F2FS_SB(sb);
 	int i;
 	bool dropped;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int j;
+#endif
 
 	/* unregister procfs/sysfs entries in advance to avoid race case */
 	f2fs_unregister_sysfs(sbi);
@@ -1796,8 +1817,15 @@ static void f2fs_put_super(struct super_block *sb)
 	fscrypt_free_dummy_policy(&F2FS_OPTION(sbi).dummy_enc_policy);
 	destroy_percpu_info(sbi);
 	f2fs_destroy_iostat(sbi);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    for (j = 0; j < MAX_ACTIVE_LOGS; j++) {
+        for (i = 0; i < NR_PAGE_TYPE; i++)
+            kvfree(sbi->write_io[j + (MAX_ACTIVE_LOGS * i)]);
+    }
+#else
 	for (i = 0; i < NR_PAGE_TYPE; i++)
 		kvfree(sbi->write_io[i]);
+#endif
 #if IS_ENABLED(CONFIG_UNICODE)
 	utf8_unload(sb->s_encoding);
 #endif
@@ -4258,6 +4286,9 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 	int recovery, i, valid_super_block;
 	struct curseg_info *seg_i;
 	int retry_cnt = 1;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int j;
+#endif
 
 try_onemore:
 	err = -EINVAL;
@@ -4739,8 +4770,15 @@ free_percpu:
 free_iostat:
 	f2fs_destroy_iostat(sbi);
 free_bio_info:
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    for (i = 0; i < NR_PAGE_TYPE; i++) {
+        for (j = 0; j < MAX_ACTIVE_LOGS; j++)
+            kvfree(sbi->write_io[j + (MAX_ACTIVE_LOGS * i)]);
+    }
+#else
 	for (i = 0; i < NR_PAGE_TYPE; i++)
 		kvfree(sbi->write_io[i]);
+#endif
 
 #if IS_ENABLED(CONFIG_UNICODE)
 	utf8_unload(sb->s_encoding);
