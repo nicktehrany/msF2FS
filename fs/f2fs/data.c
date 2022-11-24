@@ -697,20 +697,19 @@ static void __submit_merged_write_cond_spf(struct f2fs_sb_info *sbi,
 	enum temp_type temp;
 	bool ret = true;
     unsigned int stream;
+    struct f2fs_bio_info *io;
+    enum page_type btype = PAGE_TYPE_OF_BIO(type);
+
+    f2fs_down_read(&fi->i_sem);
+    if (btype == 1)
+        stream = fi->i_data_stream;
+    else
+        stream = fi->i_node_stream;
+    f2fs_up_read(&fi->i_sem);
 
     for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
         if (!force)	{
-            enum page_type btype = PAGE_TYPE_OF_BIO(type);
-
-            // TODO: error when not all pages are flushed this is NULL?
-            f2fs_down_read(&fi->i_sem);
-            if (btype == 1)
-                stream = fi->i_data_stream;
-            else
-                stream = fi->i_node_stream;
-            f2fs_up_read(&fi->i_sem);
-            
-            struct f2fs_bio_info *io = sbi->write_io[stream + (MAX_ACTIVE_LOGS * btype)] + temp;
+            io = sbi->write_io[stream + (MAX_ACTIVE_LOGS * btype)] + temp;
 
             f2fs_down_read(&io->io_rwsem);
             ret = __has_merged_page(io->bio, inode, page, ino);
@@ -794,7 +793,8 @@ void f2fs_submit_merged_write_cond(struct f2fs_sb_info *sbi,
         nid_t ino, enum page_type type)
 {
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
+    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR ||
+            !inode)
         __submit_merged_write_cond(sbi, inode, page, ino, type, false);
     else
         __submit_merged_write_cond_spf(sbi, inode, page, ino, type, false);
