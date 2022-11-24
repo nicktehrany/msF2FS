@@ -842,9 +842,6 @@ struct f2fs_inode_info {
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
     /* 
-     * atomic_t in order to ensure no concurrent file writes cause race conditions
-     * on initializing the i_stream, once set the value will not change
-     *
      * We allow only a single stream for NODE and mutliple for DATA, making the 
      * NODE related values not useful. However, we utilize them to be able to use
      * the same code for DATA and NODE, for future updates where NODE streams are

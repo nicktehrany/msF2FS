@@ -682,8 +682,52 @@ static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
 }
 #endif
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
 // TODO: once we only flush a data stream for an inode, GC data may never be flushed 
 // we don't implement GC at the moment, but once we have we need make sure this happens
+//
+// TODO right now would write inodes or META for data that has not been written
+// since inodes share streams but data don't and we only flush the data stream for an inode
+// but flush all inodes
+static void __submit_merged_write_cond_spf(struct f2fs_sb_info *sbi,
+        struct inode *inode, struct page *page,
+        nid_t ino, enum page_type type, bool force)
+{
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+	enum temp_type temp;
+	bool ret = true;
+    unsigned int stream;
+
+    for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
+        if (!force)	{
+            enum page_type btype = PAGE_TYPE_OF_BIO(type);
+
+            // TODO: error when not all pages are flushed this is NULL?
+            f2fs_down_read(&fi->i_sem);
+            if (btype == 1)
+                stream = fi->i_data_stream;
+            else
+                stream = fi->i_node_stream;
+            f2fs_up_read(&fi->i_sem);
+            
+            struct f2fs_bio_info *io = sbi->write_io[stream + (MAX_ACTIVE_LOGS * btype)] + temp;
+
+            f2fs_down_read(&io->io_rwsem);
+            ret = __has_merged_page(io->bio, inode, page, ino);
+            f2fs_up_read(&io->io_rwsem);
+        }
+
+        if (ret)
+            __f2fs_submit_merged_write(sbi, type, temp, stream);
+
+        /* TODO: use HOT temp only for meta pages now. */
+        if (type >= META)
+            break;
+    }
+
+}
+#endif
+
 static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
         struct inode *inode, struct page *page,
         nid_t ino, enum page_type type, bool force)
@@ -742,14 +786,21 @@ static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
 
 void f2fs_submit_merged_write(struct f2fs_sb_info *sbi, enum page_type type)
 {
-	__submit_merged_write_cond(sbi, NULL, NULL, 0, type, true);
+    __submit_merged_write_cond(sbi, NULL, NULL, 0, type, true);
 }
 
 void f2fs_submit_merged_write_cond(struct f2fs_sb_info *sbi,
         struct inode *inode, struct page *page,
         nid_t ino, enum page_type type)
 {
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
+        __submit_merged_write_cond(sbi, inode, page, ino, type, false);
+    else
+        __submit_merged_write_cond_spf(sbi, inode, page, ino, type, false);
+#else
     __submit_merged_write_cond(sbi, inode, page, ino, type, false);
+#endif
 }
 
 

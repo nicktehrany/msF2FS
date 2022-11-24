@@ -491,6 +491,7 @@ static int stat_show(struct seq_file *s, void *v)
             }
             seq_printf(s, "]\n");
         }
+        // TODO: no longer needed if we drop rr_stride
         seq_printf(s, "  - Stream Allocation:\n");
         seq_printf(s, "         Policy: %13s", "Round Robin\n");
         seq_printf(s, "         RR Stride: %u\n",

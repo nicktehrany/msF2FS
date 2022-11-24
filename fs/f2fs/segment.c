@@ -3687,7 +3687,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
     struct inode *inode = f2fs_iget(sbi->sb, fio->ino);
 
     *stream = f2fs_get_curseg_stream(sbi, type, inode);
-    f2fs_info(sbi, "Got <inode, stream, type>: <%lu, %u, %u>", inode->i_ino, *stream, type);
 
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
 
