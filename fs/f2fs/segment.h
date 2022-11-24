@@ -633,6 +633,62 @@ unchanged:
 
     return stream;
 }
+
+// TODO: we probably don't need all the RR stride features anymore, can cleanup all
+// these functions here
+
+
+/*
+ * Set the pinned stream for an inode. Assumes this function is only called when
+ * the inode stream has not been set, that is either of the 
+ * fi->i_has_pinned_{data,node}_stream is false. Also assumes the calling 
+ * function holds the fi->i_sem for writing (f2fs_down_write)
+ *
+ */
+static inline unsigned int __set_and_return_stream_for_file(struct f2fs_sb_info *sbi, 
+        unsigned int type, struct f2fs_inode_info *fi)
+{
+    unsigned int stream = 0;
+
+	spin_lock(&sbi->rr_active_stream_lock[type]);
+    stream = atomic_read(&sbi->rr_active_stream[type]);
+
+    /* first allocation for a stream 
+     *
+     * to simplify management code we mantain the same structure for DATA and
+     * NODE, eventhough we only allow a single NODE stream 
+     * */
+    if (stream == MAX_ACTIVE_LOGS) {
+        atomic_set(&sbi->rr_active_stream[type], 0);
+        stream = 0;
+        goto update_node;
+    }
+
+    /* Only a single stream, no need for doing RR */
+    if (F2FS_OPTION(sbi).nr_streams[type] == 1) 
+        goto update_node;
+
+    if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
+        atomic_set(&sbi->rr_active_stream[type], 0);
+        stream = 0;
+    } else {
+        atomic_inc(&sbi->rr_active_stream[type]);
+        stream++;
+    }
+
+update_node:
+    if (type < NR_CURSEG_DATA_TYPE) {
+        fi->i_data_stream = stream;
+        fi->i_has_pinned_data_stream = true;
+    } else {
+        fi->i_node_stream = stream;
+        fi->i_has_pinned_node_stream = true;
+    }
+
+	spin_unlock(&sbi->rr_active_stream_lock[type]);
+
+    return stream;
+}
 #endif
 
 

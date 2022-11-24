@@ -3631,18 +3631,46 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static unsigned int __get_stream_round_robin_policy(struct f2fs_sb_info *sbi, 
+static unsigned int __get_stream_rr_policy(struct f2fs_sb_info *sbi, 
         unsigned int type)
 {
     return __get_current_stream_and_set_next_stream_active(sbi, type);
 }
 
-static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
-        int type)
+static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi, 
+        unsigned int type, struct inode *inode)
 {
-    return __get_stream_round_robin_policy(sbi, type);
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+    unsigned int stream = 0;
+
+    // use fi->i_sem
+    f2fs_down_read(&fi->i_sem);
+    if (type < NR_CURSEG_DATA_TYPE && fi->i_has_pinned_data_stream) {
+        stream = fi->i_data_stream;
+    } else if (type >= NR_CURSEG_DATA_TYPE && fi->i_has_pinned_node_stream) {
+        stream = fi->i_node_stream;
+    } else {
+        f2fs_up_read(&fi->i_sem);
+        f2fs_down_write(&fi->i_sem);
+        stream = __set_and_return_stream_for_file(sbi, type, fi);
+        f2fs_up_write(&fi->i_sem);
+        goto set_stream;
+    }
+
+    f2fs_up_read(&fi->i_sem);
+
+set_stream:
+    return stream;
 }
 
+static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
+        int type, struct inode *inode)
+{
+    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
+        return __get_stream_stream_spf_policy(sbi, type, inode);
+    else
+        return __get_stream_rr_policy(sbi, type);
+}
 #endif
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
@@ -3656,8 +3684,10 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	unsigned long long old_mtime;
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
+    struct inode *inode = f2fs_iget(sbi->sb, fio->ino);
 
-    *stream = f2fs_get_curseg_stream(sbi, type);
+    *stream = f2fs_get_curseg_stream(sbi, type, inode);
+    f2fs_info(sbi, "Got <inode, stream, type>: <%lu, %u, %u>", inode->i_ino, *stream, type);
 
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
 

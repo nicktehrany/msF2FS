@@ -682,6 +682,8 @@ static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
 }
 #endif
 
+// TODO: once we only flush a data stream for an inode, GC data may never be flushed 
+// we don't implement GC at the moment, but once we have we need make sure this happens
 static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
         struct inode *inode, struct page *page,
         nid_t ino, enum page_type type, bool force)
@@ -694,7 +696,7 @@ static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
 
     for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
         for (i = 0; i < MAX_ACTIVE_LOGS; i++) {
-            /* META (SIT, NAT, etc.) is only in stream 0 */
+            /* META is only in stream 0 */
             if (type >= META && i >= 1)
                 break;
 
@@ -1484,6 +1486,9 @@ static int __allocate_data_block(struct dnode_of_data *dn, int seg_type)
 	block_t old_blkaddr;
 	blkcnt_t count = 1;
 	int err;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream;
+#endif
 
 	if (unlikely(is_inode_flag_set(dn->inode, FI_NO_ALLOC)))
 		return -EPERM;
@@ -1502,8 +1507,8 @@ static int __allocate_data_block(struct dnode_of_data *dn, int seg_type)
 alloc:
 	set_summary(&sum, dn->nid, dn->ofs_in_node, ni.version);
 	old_blkaddr = dn->data_blkaddr;
+
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned int stream;
 	f2fs_allocate_data_block(sbi, NULL, old_blkaddr, &dn->data_blkaddr,
 				&sum, seg_type, NULL, &stream);
 #else

@@ -438,6 +438,10 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->main_area_zones);
 #ifdef CONFIG_F2FS_MULTI_STREAM
         seq_printf(s, "\n    Multi-Stream INFO:\n");
+        if (F2FS_OPTION(si->sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
+            seq_printf(s, "  - Stream Alloc Policy: %s\n", "SPF");
+        else
+            seq_printf(s, "  - Stream Alloc Policy: %s\n", "SRR");
         seq_printf(s, "  - Maximum Streams: %u\n", 
                 si->nr_max_streams);
         seq_printf(s, "  - Active Streams: %u\n",
