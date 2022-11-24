@@ -3636,9 +3636,7 @@ static unsigned int __get_stream_round_robin_policy(struct f2fs_sb_info *sbi,
 {
     return __get_current_stream_and_set_next_stream_active(sbi, type);
 }
-#endif
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
 static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
         int type)
 {
@@ -3654,7 +3652,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		struct f2fs_io_info *fio, unsigned int *stream)
 {
 	struct sit_info *sit_i = SIT_I(sbi);
-    bool new_stream = false;
     struct curseg_info *curseg;
 	unsigned long long old_mtime;
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
@@ -3686,6 +3683,9 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	 * __add_sum_entry should be resided under the curseg_mutex
 	 * because, this function updates a summary entry in the
 	 * current summary block.
+     * TODO: THIS WON'T WORK CORRECTLY IF WE HAVE SUMMARY IN EACH CURSEG STREAM
+     * WHEN WE TRY TO PIN TO THE FIRST STREAM FOR SUMMARY
+     * HAVE TO UPDATE ALL NAT SIT JOURNALS TO BE ON ALL STREAMS
 	 */
 	__add_sum_entry(sbi, type, sum, *stream);
 
@@ -3709,7 +3709,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO)
 		update_sit_entry(sbi, old_blkaddr, -1);
 
-	if (!new_stream && !__has_curseg_space(sbi, curseg)) {
+	if (!__has_curseg_space(sbi, curseg)) {
 		if (from_gc)
 			get_atssr_segment(sbi, type, se->type,
 						AT_SSR, se->mtime, *stream);
