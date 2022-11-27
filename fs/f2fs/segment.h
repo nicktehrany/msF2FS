@@ -690,7 +690,7 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
     unsigned int next_free_stream;
     struct f2fs_inode_info *fi = F2FS_I(inode);
 
-    if (is_inode_flag_set(inode, FI_EXCLUSIVE_DATA_STREAM)) {
+    if (inode->i_exclusive_data_stream) {
         /* only have a single stream, no exclusive reservation or RR allocation needed */
         if (active_streams == 1)
             goto fail_set_exclusive;
@@ -728,7 +728,7 @@ set_stream:
 fail_set_exclusive:
     /* Failing resets the inode flag and prints a kernel info message */
     f2fs_info(sbi, "Failed setting exclusive stream for inode %lu. No free exclusive streams available.", inode->i_ino);
-    clear_inode_flag(inode, FI_EXCLUSIVE_DATA_STREAM);
+    inode->i_exclusive_data_stream = false;
 
     goto set_stream;
 

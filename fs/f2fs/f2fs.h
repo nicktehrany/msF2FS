@@ -784,9 +784,6 @@ enum {
 	FI_ENABLE_COMPRESS,	/* enable compression in "user" compression mode */
 	FI_COMPRESS_RELEASED,	/* compressed blocks were released */
 	FI_ALIGNED_WRITE,	/* enable aligned write */
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    FI_EXCLUSIVE_DATA_STREAM, /* indicate file wants an exclusive data stream */
-#endif
 	FI_MAX,			/* max flag, never be used */
 };
 

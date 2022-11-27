@@ -311,6 +311,28 @@ static long fcntl_rw_hint(struct file *file, unsigned int cmd,
 	}
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static long fcntl_set_data_stream(struct file *file, unsigned int cmd)
+{
+	struct inode *inode = file_inode(file);
+
+	switch (cmd) {
+	case F_SET_EXCLUSIVE_DATA_STREAM:
+		inode_lock(inode);
+		inode->i_exclusive_data_stream = true;
+		inode_unlock(inode);
+		return 0;
+    case F_UNSET_EXCLUSIVE_DATA_STREAM:
+		inode_lock(inode);
+		inode->i_exclusive_data_stream = false;
+		inode_unlock(inode);
+        return 0;
+	default:
+		return -EINVAL;
+	}
+}
+#endif
+
 static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		struct file *filp)
 {
@@ -416,6 +438,12 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_SET_RW_HINT:
 		err = fcntl_rw_hint(filp, cmd, arg);
 		break;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    case F_SET_EXCLUSIVE_DATA_STREAM:
+    case F_UNSET_EXCLUSIVE_DATA_STREAM:
+        err = fcntl_set_data_stream(filp, cmd);
+        break;
+#endif
 	default:
 		break;
 	}
