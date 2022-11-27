@@ -406,18 +406,6 @@ static int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
 
     return 0;
 }
-
-static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi,
-        unsigned int type, unsigned int stream)
-{
-    bool is_bit_set = false;
-
-	spin_lock(&sbi->resmap_lock);
-	is_bit_set = test_bit_le(stream, sbi->resmap[type]);
-	spin_unlock(&sbi->resmap_lock);
-
-    return is_bit_set;
-}
 #endif
 
 
@@ -686,6 +674,7 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
 {
     unsigned int stream = 0;
     unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+    unsigned int next_free_stream;
     struct f2fs_inode_info *fi = F2FS_I(inode);
 
     if (is_inode_flag_set(inode, FI_EXCLUSIVE_DATA_STREAM)) {
@@ -705,7 +694,7 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
             goto fail_set_exclusive;
         } else {
             stream = next_free_stream;
-            set_bit_le(sbi->resmap[type], stream);
+            set_bit_le(stream, sbi->resmap[type]);
             spin_unlock(&sbi->resmap_lock);
             f2fs_down_write(&fi->i_sem);
             fi->i_has_exclusive_data_stream = true;
@@ -725,7 +714,7 @@ set_stream:
 
 fail_set_exclusive:
     /* Failing resets the inode flag and prints a kernel info message */
-    f2fs_info(sbi, "Failed setting exclusive stream for inode %s. No free exclusive streams available.", inode->i_name);
+    f2fs_info(sbi, "Failed setting exclusive stream for inode %lu. No free exclusive streams available.", inode->i_ino);
     clear_inode_flag(inode, FI_EXCLUSIVE_DATA_STREAM);
 
     goto set_stream;
@@ -739,7 +728,6 @@ static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info
         struct inode *inode)
 {
     unsigned int stream = 0;
-    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
     struct f2fs_inode_info *fi = F2FS_I(inode);
 
     stream = __get_next_file_stream_rr(sbi, type);

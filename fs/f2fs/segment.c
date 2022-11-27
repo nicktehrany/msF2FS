@@ -3648,15 +3648,22 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
     if (type < NR_CURSEG_DATA_TYPE && fi->i_has_pinned_data_stream) {
         /* another file has exclusively claimed stream, need to migrate */
         if (!is_inode_flag_set(inode, FI_EXCLUSIVE_DATA_STREAM) &&
-                __test_stream_reserved(sbi, type, fi->i_data_stream))
+                __test_stream_reserved(sbi, type, fi->i_data_stream)) {
+            f2fs_up_read(&fi->i_sem);
             stream = __set_and_return_file_data_stream(sbi, type, inode);
-        else
+        } else {
             stream = fi->i_data_stream;
+            f2fs_up_read(&fi->i_sem);
+        }
     } else if (type < NR_CURSEG_DATA_TYPE && !fi->i_has_pinned_data_stream) {
+        /* need to release lock before calling setting function */
+        f2fs_up_read(&fi->i_sem);
         stream = __set_and_return_file_data_stream(sbi, type, inode);
     } else if (type >= NR_CURSEG_DATA_TYPE && fi->i_has_pinned_node_stream) {
         stream = fi->i_node_stream;
+        f2fs_up_read(&fi->i_sem);
     }  else if (type >= NR_CURSEG_DATA_TYPE && !fi->i_has_pinned_node_stream) {
+        f2fs_up_read(&fi->i_sem);
         stream = __set_and_return_file_node_stream(sbi, type, inode);
     }
 
@@ -3664,8 +3671,6 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
     if (!is_inode_flag_set(inode, FI_EXCLUSIVE_DATA_STREAM) && 
             fi->i_has_exclusive_data_stream)
         __release_exclusive_data_stream(sbi, type, inode, fi->i_data_stream);
-
-    f2fs_up_read(&fi->i_sem);
 
     return stream;
 }
