@@ -406,6 +406,18 @@ static int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
 
     return 0;
 }
+
+static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int stream)
+{
+    bool is_bit_set = false;
+
+	spin_lock(&sbi->resmap_lock);
+	is_bit_set = test_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
+
+    return is_bit_set;
+}
 #endif
 
 
@@ -637,16 +649,8 @@ unchanged:
 // TODO: we probably don't need all the RR stride features anymore, can cleanup all
 // these functions here
 
-
-/*
- * Set the pinned stream for an inode. Assumes this function is only called when
- * the inode stream has not been set, that is either of the 
- * fi->i_has_pinned_{data,node}_stream is false. Also assumes the calling 
- * function holds the fi->i_sem for writing (f2fs_down_write)
- *
- */
-static inline unsigned int __set_and_return_stream_for_file(struct f2fs_sb_info *sbi, 
-        unsigned int type, struct f2fs_inode_info *fi)
+static inline unsigned int __get_next_file_stream_rr(struct f2fs_sb_info *sbi, 
+        unsigned int type)
 {
     unsigned int stream = 0;
 
@@ -661,33 +665,117 @@ static inline unsigned int __set_and_return_stream_for_file(struct f2fs_sb_info 
     if (stream == MAX_ACTIVE_LOGS) {
         atomic_set(&sbi->rr_active_stream[type], 0);
         stream = 0;
-        goto update_node;
+        goto init_stream;
     }
-
-    /* Only a single stream, no need for doing RR */
-    if (F2FS_OPTION(sbi).nr_streams[type] == 1) 
-        goto update_node;
 
     if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
         atomic_set(&sbi->rr_active_stream[type], 0);
         stream = 0;
     } else {
-        atomic_inc(&sbi->rr_active_stream[type]);
-        stream++;
+        stream = atomic_inc_return(&sbi->rr_active_stream[type]);
     }
 
-update_node:
-    if (type < NR_CURSEG_DATA_TYPE) {
-        fi->i_data_stream = stream;
-        fi->i_has_pinned_data_stream = true;
-    } else {
-        fi->i_node_stream = stream;
-        fi->i_has_pinned_node_stream = true;
-    }
-
+init_stream:
 	spin_unlock(&sbi->rr_active_stream_lock[type]);
 
     return stream;
+}
+
+static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info *sbi,
+        unsigned int type, struct inode *inode)
+{
+    unsigned int stream = 0;
+    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+
+    if (is_inode_flag_set(inode, FI_EXCLUSIVE_DATA_STREAM)) {
+        /* only have a single stream, no exclusive reservation or RR allocation needed */
+        if (active_streams == 1)
+            goto fail_set_exclusive;
+
+        spin_lock(&sbi->resmap_lock);
+        next_free_stream = find_next_zero_bit_le(sbi->resmap[type], MAX_ACTIVE_LOGS, 0);
+
+        /* we always need to keep at least 1 non-exclusive stream for data, therefore
+         * fail exclusive stream allocation if no more than 1 streams are available */
+        if (next_free_stream == active_streams - 1) {
+            spin_unlock(&sbi->resmap_lock);
+            /* fall back to RR based file stream allocation */
+            stream = __get_next_file_stream_rr(sbi, type);
+            goto fail_set_exclusive;
+        } else {
+            stream = next_free_stream;
+            set_bit_le(sbi->resmap[type], stream);
+            spin_unlock(&sbi->resmap_lock);
+            f2fs_down_write(&fi->i_sem);
+            fi->i_has_exclusive_data_stream = true;
+            f2fs_up_write(&fi->i_sem);
+        }
+    } else {
+        stream = __get_next_file_stream_rr(sbi, type);
+    }
+
+set_stream:
+    f2fs_down_write(&fi->i_sem);
+    fi->i_data_stream = stream;
+    fi->i_has_pinned_data_stream = true;
+    f2fs_up_write(&fi->i_sem);
+
+    return stream;
+
+fail_set_exclusive:
+    /* Failing resets the inode flag and prints a kernel info message */
+    f2fs_info(sbi, "Failed setting exclusive stream for inode %s. No free exclusive streams available.", inode->i_name);
+    clear_inode_flag(inode, FI_EXCLUSIVE_DATA_STREAM);
+
+    goto set_stream;
+
+}
+
+/*
+ * Sets and returns the node stream for a file.
+ * NOTE, we currently do not support mutliple NODE streams, therefore this will always return 0 */
+static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info *sbi, unsigned int type,
+        struct inode *inode)
+{
+    unsigned int stream = 0;
+    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+
+    stream = __get_next_file_stream_rr(sbi, type);
+
+    f2fs_down_write(&fi->i_sem);
+    fi->i_node_stream = stream;
+    fi->i_has_pinned_node_stream = true;
+    f2fs_up_write(&fi->i_sem);
+
+    return stream;
+}
+
+static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi, unsigned int type,
+        unsigned int stream)
+{
+    bool is_bit_set = false;
+
+	spin_lock(&sbi->resmap_lock);
+	is_bit_set = test_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
+
+    return is_bit_set;
+}
+
+static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi, unsigned int type,
+        struct inode *inode, unsigned int stream)
+{
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+
+	spin_lock(&sbi->resmap_lock);
+	__clear_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
+
+    f2fs_down_write(&fi->i_sem);
+    fi->i_has_exclusive_data_stream = false;
+    f2fs_up_write(&fi->i_sem);
 }
 #endif
 
