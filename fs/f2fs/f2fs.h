@@ -1881,6 +1881,7 @@ struct f2fs_sb_info {
     atomic_t nr_active_streams;
     spinlock_t streammap_lock;
     unsigned long **streammap; /* bitmap per TYPE to know active streams for each */
+    unsigned long streams_inomap[NR_CURSEG_TYPE * MAX_ACTIVE_LOGS]; /* Maintain the inode number that holds an exclusive stream */
     spinlock_t rr_active_stream_lock[NR_CURSEG_TYPE];
     atomic_t rr_active_stream[NR_CURSEG_TYPE];
     atomic_t rr_stride_ctr[NR_CURSEG_TYPE];

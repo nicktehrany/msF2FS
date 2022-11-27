@@ -461,7 +461,7 @@ static int stat_show(struct seq_file *s, void *v)
                 __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_NODE),
                 __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_NODE),
                 __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_NODE));
-        seq_printf(s, "       RESERVED:  [ %2u %2u %2u %2u %2u %2u  ]\n",
+        seq_printf(s, "      EXCLUSIVE:  [ %2u %2u %2u %2u %2u %2u  ]\n",
                 __get_number_reserved_streams_for_type(si->sbi, CURSEG_HOT_DATA),
                 __get_number_reserved_streams_for_type(si->sbi, CURSEG_WARM_DATA),
                 __get_number_reserved_streams_for_type(si->sbi, CURSEG_COLD_DATA),
@@ -525,6 +525,38 @@ static int stat_show(struct seq_file *s, void *v)
             for (j = 0; j < streams; j++) {
                 if(__test_stream_reserved(si->sbi, i, j))
                     seq_printf(s, "1 ");
+                else
+                    seq_printf(s, "0 ");
+
+            }
+            seq_printf(s, "]\n");
+        }
+        seq_printf(s, "  - EXCLUSIVE STREAM INO-MAP:\n");
+        for (i = 0; i < NR_CURSEG_PERSIST_TYPE; i++) {
+            switch (i) {
+                case 0:
+                    seq_printf(s, "       %s   [ ", "HOT_DATA");
+                    break;
+                case 1:
+                    seq_printf(s, "       %s  [ ", "WARM_DATA");
+                    break;
+                case 2:
+                    seq_printf(s, "       %s  [ ", "COLD_DATA");
+                    break;
+                case 3:
+                    seq_printf(s, "       %s   [ ", "HOT_NODE");
+                    break;
+                case 4:
+                    seq_printf(s, "       %s  [ ", "WAMR_NODE");
+                    break;
+                case 5:
+                    seq_printf(s, "       %s  [ ", "COLD_NODE");
+                    break;
+            }
+            streams = __get_number_active_streams_for_type(si->sbi, i);
+            for (j = 0; j < streams; j++) {
+                if(__test_stream_reserved(si->sbi, i, j))
+                    seq_printf(s, "%lu ", __get_reserved_stream_inode(si->sbi, i, j));
                 else
                     seq_printf(s, "0 ");
 

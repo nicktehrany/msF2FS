@@ -708,6 +708,7 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
         } else {
             stream = next_free_stream;
             set_bit_le(stream, sbi->resmap[type]);
+            sbi->streams_inomap[stream * NR_CURSEG_TYPE + type] = inode->i_ino;
             spin_unlock(&sbi->resmap_lock);
             f2fs_down_write(&fi->i_sem);
             fi->i_has_exclusive_data_stream = true;
@@ -753,12 +754,42 @@ static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info
     return stream;
 }
 
-static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi, unsigned int type,
-        struct inode *inode, unsigned int stream)
+/* 
+ * Get the stream index for an inode and clear it. This function must only
+ * be called during deallocation of an exclusive stream.
+ * Assumes the caller holds the sbi->resmap_lock 
+ */
+static inline unsigned int __get_and_clear_stream_index_from_inode(struct f2fs_sb_info *sbi,
+        unsigned long ino, unsigned int *stream)
+{
+    // TODO loop over streams_inomap to get type and stream number
+    // and reset it to 0
+    unsigned int type;
+    unsigned int active_streams;
+
+    for (type = CURSEG_HOT_DATA; type < NR_PERSISTENT_LOG; type++) {
+        active_streams = __get_number_active_streams_for_type(sbi, type);
+        for (*stream = 0; *stream < active_streams; (*stream)++) {
+            if (sbi->streams_inomap[*stream * NR_CURSEG_TYPE + type] == ino) {
+                sbi->streams_inomap[*stream * NR_CURSEG_TYPE + type] = 0;
+                return type;
+            }
+        }
+    }
+
+    /* Should never get here */
+    return -EINVAL;
+}
+
+static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi, 
+        struct inode *inode)
 {
     struct f2fs_inode_info *fi = F2FS_I(inode);
+    unsigned int stream;
+    unsigned int type; 
 
 	spin_lock(&sbi->resmap_lock);
+    type = __get_and_clear_stream_index_from_inode(sbi, inode->i_ino, &stream);
 	__clear_bit_le(stream, sbi->resmap[type]);
 	spin_unlock(&sbi->resmap_lock);
 
@@ -782,6 +813,18 @@ static inline unsigned int __get_number_reserved_streams_for_type(struct f2fs_sb
 	spin_unlock(&sbi->resmap_lock);
 
     return streams;
+}
+
+static inline unsigned long __get_reserved_stream_inode(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int stream)
+{
+    unsigned long ino;
+
+	spin_lock(&sbi->resmap_lock);
+    ino = sbi->streams_inomap[stream * NR_CURSEG_TYPE + type];
+	spin_unlock(&sbi->resmap_lock);
+
+    return ino;
 }
 #endif
 

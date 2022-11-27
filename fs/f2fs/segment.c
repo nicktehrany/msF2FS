@@ -3670,7 +3670,7 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
     /* file no longer needs exclusive data stream, release the exclusive stream */
     if (!inode->i_exclusive_data_stream && 
             fi->i_has_exclusive_data_stream)
-        __release_exclusive_data_stream(sbi, type, inode, fi->i_data_stream);
+        __release_exclusive_data_stream(sbi, inode);
 
     return stream;
 }
