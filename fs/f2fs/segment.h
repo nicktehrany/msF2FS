@@ -636,6 +636,17 @@ unchanged:
 
 // TODO: we probably don't need all the RR stride features anymore, can cleanup all
 // these functions here
+static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi, unsigned int type,
+        unsigned int stream)
+{
+    bool is_bit_set = false;
+
+	spin_lock(&sbi->resmap_lock);
+	is_bit_set = test_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
+
+    return is_bit_set;
+}
 
 static inline unsigned int __get_next_file_stream_rr(struct f2fs_sb_info *sbi, 
         unsigned int type)
@@ -643,28 +654,30 @@ static inline unsigned int __get_next_file_stream_rr(struct f2fs_sb_info *sbi,
     unsigned int stream = 0;
 
 	spin_lock(&sbi->rr_active_stream_lock[type]);
-    stream = atomic_read(&sbi->rr_active_stream[type]);
 
-    /* first allocation for a stream 
-     *
-     * to simplify management code we mantain the same structure for DATA and
-     * NODE, eventhough we only allow a single NODE stream 
-     * */
-    if (stream == MAX_ACTIVE_LOGS) {
-        atomic_set(&sbi->rr_active_stream[type], 0);
-        stream = 0;
-        goto init_stream;
-    }
+    do {
+        stream = atomic_read(&sbi->rr_active_stream[type]);
 
-    if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
-        atomic_set(&sbi->rr_active_stream[type], 0);
-        stream = 0;
-    } else {
-        stream = atomic_inc_return(&sbi->rr_active_stream[type]);
-    }
+        /* first allocation for a stream 
+         *
+         * to simplify management code we mantain the same structure for DATA and
+         * NODE, eventhough we only allow a single NODE stream 
+         * */
+        if (stream == MAX_ACTIVE_LOGS) {
+            atomic_set(&sbi->rr_active_stream[type], 0);
+            stream = 0;
+            continue;
+        }
 
-init_stream:
-	spin_unlock(&sbi->rr_active_stream_lock[type]);
+        if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
+            atomic_set(&sbi->rr_active_stream[type], 0);
+            stream = 0;
+        } else {
+            stream = atomic_inc_return(&sbi->rr_active_stream[type]);
+        }
+    } while (__test_stream_reserved(sbi, type, stream));
+
+    spin_unlock(&sbi->rr_active_stream_lock[type]);
 
     return stream;
 }
@@ -738,18 +751,6 @@ static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info
     f2fs_up_write(&fi->i_sem);
 
     return stream;
-}
-
-static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi, unsigned int type,
-        unsigned int stream)
-{
-    bool is_bit_set = false;
-
-	spin_lock(&sbi->resmap_lock);
-	is_bit_set = test_bit_le(stream, sbi->resmap[type]);
-	spin_unlock(&sbi->resmap_lock);
-
-    return is_bit_set;
 }
 
 static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi, unsigned int type,
