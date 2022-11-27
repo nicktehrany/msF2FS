@@ -3643,7 +3643,6 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
     struct f2fs_inode_info *fi = F2FS_I(inode);
     unsigned int stream = 0;
 
-    // use fi->i_sem
     f2fs_down_read(&fi->i_sem);
     if (type < NR_CURSEG_DATA_TYPE && fi->i_has_pinned_data_stream) {
         stream = fi->i_data_stream;
@@ -4602,13 +4601,10 @@ static void write_normal_summaries(struct f2fs_sb_info *sbi,
 #ifdef CONFIG_F2FS_MULTI_STREAM
     for (i = type; i < end; i++)
     { 
-        streams = __get_number_active_streams_for_type(sbi, type);
+        streams = __get_number_active_streams_for_type(sbi, i - type);
 
         for (j = 0; j < streams; j++)
-        {
-            f2fs_info(sbi, "Write page for <type stream>: <%u %u>", type, j);
             write_current_sum_page_at_stream(sbi, i, blkaddr + (i - type), j);
-        }
     }
 #else
 	for (i = type; i < end; i++)

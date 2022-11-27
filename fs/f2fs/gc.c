@@ -1243,6 +1243,10 @@ static int move_data_block(struct inode *inode, block_t bidx,
 				(fio.sbi->gc_mode != GC_URGENT_HIGH) ?
 				CURSEG_ALL_DATA_ATGC : CURSEG_COLD_DATA;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream;
+#endif
+
 	/* do not read out */
 	page = f2fs_grab_cache_page(inode->i_mapping, bidx, false);
 	if (!page)
@@ -1320,7 +1324,6 @@ static int move_data_block(struct inode *inode, block_t bidx,
 
 	/* allocate block address */
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned int stream;
 	f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,
 				&sum, type, NULL, &stream); // TODO Unused stream
 #else
