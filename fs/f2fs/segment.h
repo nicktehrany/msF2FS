@@ -765,6 +765,23 @@ static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi, uns
     fi->i_has_exclusive_data_stream = false;
     f2fs_up_write(&fi->i_sem);
 }
+
+static inline unsigned int __get_number_reserved_streams_for_type(struct f2fs_sb_info *sbi,
+        unsigned int type)
+{
+    unsigned int streams = 0;
+    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+    int i;
+
+	spin_lock(&sbi->resmap_lock);
+    for (i = 0; i < active_streams; i++) {
+        if (test_bit_le(i, sbi->resmap[type]))
+            streams++;
+    }
+	spin_unlock(&sbi->resmap_lock);
+
+    return streams;
+}
 #endif
 
 
