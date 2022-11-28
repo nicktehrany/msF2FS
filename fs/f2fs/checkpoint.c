@@ -572,6 +572,10 @@ void f2fs_release_ino_entry(struct f2fs_sb_info *sbi, bool all)
 			radix_tree_delete(&im->ino_root, e->ino);
 			kmem_cache_free(ino_entry_slab, e);
 			im->ino_num--;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+            if (__test_ino_holds_exclusive_stream(sbi, e->ino))
+                __clear_exclusive_data_stream(sbi, e->ino);
+#endif
 		}
 		spin_unlock(&im->ino_lock);
 	}

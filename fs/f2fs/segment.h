@@ -636,6 +636,7 @@ unchanged:
 
 // TODO: we probably don't need all the RR stride features anymore, can cleanup all
 // these functions here
+
 static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi, unsigned int type,
         unsigned int stream)
 {
@@ -696,11 +697,12 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
             goto fail_set_exclusive;
 
         spin_lock(&sbi->resmap_lock);
-        next_free_stream = find_next_zero_bit_le(sbi->resmap[type], MAX_ACTIVE_LOGS, 0);
+        /* Stream 0 is a special stream, non-reservable by files for exclusive access */
+        next_free_stream = find_next_zero_bit_le(sbi->resmap[type], MAX_ACTIVE_LOGS, 1);
 
-        /* we always need to keep at least 1 non-exclusive stream for data, therefore
-         * fail exclusive stream allocation if no more than 1 streams are available */
-        if (next_free_stream == active_streams - 1) {
+        /* we always need to keep at least 1 non-exclusive stream for data (stream 0), therefore
+         * fail exclusive stream allocation if all other streams are reserved */
+        if (next_free_stream == active_streams) {
             spin_unlock(&sbi->resmap_lock);
             /* fall back to RR based file stream allocation */
             stream = __get_next_file_stream_rr(sbi, type);
@@ -762,8 +764,6 @@ static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info
 static inline unsigned int __get_and_clear_stream_index_from_inode(struct f2fs_sb_info *sbi,
         unsigned long ino, unsigned int *stream)
 {
-    // TODO loop over streams_inomap to get type and stream number
-    // and reset it to 0
     unsigned int type;
     unsigned int active_streams;
 
@@ -781,6 +781,24 @@ static inline unsigned int __get_and_clear_stream_index_from_inode(struct f2fs_s
     return -EINVAL;
 }
 
+static inline unsigned int __test_ino_holds_exclusive_stream(struct f2fs_sb_info *sbi,
+        unsigned long ino)
+{
+    unsigned int i, j;
+    unsigned int active_streams;
+
+    for (i = CURSEG_HOT_DATA; i < NR_PERSISTENT_LOG; i++) {
+        active_streams = __get_number_active_streams_for_type(sbi, i);
+        for (j = 0; j < active_streams; j++) {
+            if (sbi->streams_inomap[j * NR_CURSEG_TYPE + i] == ino) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi, 
         struct inode *inode)
 {
@@ -796,6 +814,21 @@ static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi,
     f2fs_down_write(&fi->i_sem);
     fi->i_has_exclusive_data_stream = false;
     f2fs_up_write(&fi->i_sem);
+}
+
+/* Different from __release_exclusive_data_stream this function is meant for
+ * inodes that are being deleted, hence no need to update any inode flags.
+ */
+static inline void __clear_exclusive_data_stream(struct f2fs_sb_info *sbi, 
+        unsigned long ino)
+{
+    unsigned int stream;
+    unsigned int type; 
+
+	spin_lock(&sbi->resmap_lock);
+    type = __get_and_clear_stream_index_from_inode(sbi, ino, &stream);
+	__clear_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
 }
 
 static inline unsigned int __get_number_reserved_streams_for_type(struct f2fs_sb_info *sbi,

@@ -601,15 +601,6 @@ static int f2fs_unlink(struct inode *dir, struct dentry *dentry)
 	struct page *page;
 	int err;
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    struct f2fs_inode_info *fi = F2FS_I(inode);
-    if (fi->i_has_exclusive_data_stream) {
-        inode->i_exclusive_data_stream = false;
-        fi->i_has_exclusive_data_stream = false;
-        __release_exclusive_data_stream(sbi, inode);
-    }
-#endif
-
 	trace_f2fs_unlink_enter(dir, dentry);
 
 	if (unlikely(f2fs_cp_error(sbi))) {

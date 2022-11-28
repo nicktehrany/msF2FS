@@ -495,7 +495,6 @@ static int stat_show(struct seq_file *s, void *v)
                     seq_printf(s, "1 ");
                 else
                     seq_printf(s, "0 ");
-
             }
             seq_printf(s, "]\n");
         }
@@ -523,11 +522,12 @@ static int stat_show(struct seq_file *s, void *v)
             }
             streams = __get_number_active_streams_for_type(si->sbi, i);
             for (j = 0; j < streams; j++) {
-                if(__test_stream_reserved(si->sbi, i, j))
+                if (j == 0)
+                    seq_printf(s, "- ");
+                else if(__test_inuse_stream(si->sbi, i, j))
                     seq_printf(s, "1 ");
                 else
                     seq_printf(s, "0 ");
-
             }
             seq_printf(s, "]\n");
         }
