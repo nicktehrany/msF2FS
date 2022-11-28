@@ -527,7 +527,7 @@ static int stat_show(struct seq_file *s, void *v)
                 for (j = 0; j < streams; j++) {
                     if (j == 0)
                         seq_printf(s, "- ");
-                    else if(__test_inuse_stream(si->sbi, i, j))
+                    else if (__test_stream_reserved(si->sbi, i, j))
                         seq_printf(s, "1 ");
                     else
                         seq_printf(s, "0 ");
@@ -560,7 +560,7 @@ static int stat_show(struct seq_file *s, void *v)
                 for (j = 0; j < streams; j++) {
                     if (j == 0)
                         seq_printf(s, "- ");
-                    else if(__test_stream_reserved(si->sbi, i, j))
+                    else if (__test_stream_reserved(si->sbi, i, j))
                         seq_printf(s, "%lu ", __get_reserved_stream_inode(si->sbi, i, j));
                     else
                         seq_printf(s, "0 ");
