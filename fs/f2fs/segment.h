@@ -375,7 +375,7 @@ static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
     return is_bit_set;
 }
 
-static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
+static inline int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
 {
     int stream, type;
     int active_streams = __get_number_active_streams(sbi);
@@ -391,7 +391,7 @@ static int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
     return 0;
 }
 
-static int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
+static inline int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
 {
     int stream, type;
     int active_streams = __get_number_active_streams(sbi);

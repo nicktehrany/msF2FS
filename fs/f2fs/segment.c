@@ -2944,7 +2944,7 @@ static void __f2fs_init_atgc_curseg(struct f2fs_sb_info *sbi)
 	down_write(&SIT_I(sbi)->sentry_lock);
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    /* TODO: SSR would not work on ZNS, so we don't support it but add this to
+    /* SSR would not work on ZNS, so we don't support it but add this to
      * avoid compile issues 
      */
 	get_atssr_segment(sbi, CURSEG_ALL_DATA_ATGC, CURSEG_COLD_DATA, SSR, 0, 0);
@@ -3702,7 +3702,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
 
-    f2fs_info(sbi, "Write for %u", fio->ino);
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);

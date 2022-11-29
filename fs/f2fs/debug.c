@@ -486,7 +486,7 @@ static int stat_show(struct seq_file *s, void *v)
                     seq_printf(s, "       %s   [ ", "HOT_NODE");
                     break;
                 case 4:
-                    seq_printf(s, "       %s  [ ", "WAMR_NODE");
+                    seq_printf(s, "       %s  [ ", "WARM_NODE");
                     break;
                 case 5:
                     seq_printf(s, "       %s  [ ", "COLD_NODE");
@@ -517,7 +517,7 @@ static int stat_show(struct seq_file *s, void *v)
                         seq_printf(s, "       %s   [ ", "HOT_NODE");
                         break;
                     case 4:
-                        seq_printf(s, "       %s  [ ", "WAMR_NODE");
+                        seq_printf(s, "       %s  [ ", "WARM_NODE");
                         break;
                     case 5:
                         seq_printf(s, "       %s  [ ", "COLD_NODE");
@@ -550,7 +550,7 @@ static int stat_show(struct seq_file *s, void *v)
                         seq_printf(s, "       %s   [ ", "HOT_NODE");
                         break;
                     case 4:
-                        seq_printf(s, "       %s  [ ", "WAMR_NODE");
+                        seq_printf(s, "       %s  [ ", "WARM_NODE");
                         break;
                     case 5:
                         seq_printf(s, "       %s  [ ", "COLD_NODE");

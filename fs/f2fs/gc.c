@@ -1231,7 +1231,9 @@ static int move_data_block(struct inode *inode, block_t bidx,
 		.encrypted_page = NULL,
 		.in_list = false,
 		.retry = false,
+#ifdef CONFIG_F2FS_MULTI_STREAM
         .stream = 0,
+#endif
 	};
 	struct dnode_of_data dn;
 	struct f2fs_summary sum;

@@ -550,16 +550,9 @@ int f2fs_get_node_info(struct f2fs_sb_info *sbi, nid_t nid,
 	pgoff_t index;
 	block_t blkaddr;
 	int i;
-/* #ifdef CONFIG_F2FS_MULTI_STREAM */
-/* TODO: it hangs on the iget, where else can we get the stream info for a nid for? keep some map for inode number to stream since we do not have the node here */ 
-    /* we can just loop over all streams and see if one has the data in journal otherwise usual path */
-/*     struct inode *inode = f2fs_iget(sbi->sb, nid); */
-/*     struct f2fs_inode_info *fi = F2FS_I(inode); */
-/*     struct curseg_info *curseg = CURSEG_I(sbi, fi->i_data_stream * NR_CURSEG_TYPE + CURSEG_HOT_DATA); */
-/*     f2fs_info(sbi, "got with <inode, stream> <%lu,%u>", fi->vfs_inode.i_ino, fi->i_data_stream); */
-/* #else */
+    /* TODO: Multi-stream currently has no support for per-stream journals,
+     * therefore all is still on stream 0 */
     struct curseg_info *curseg = CURSEG_I(sbi, CURSEG_HOT_DATA);
-/* #endif */
     struct f2fs_journal *journal = curseg->journal;
 
 	ni->nid = nid;
