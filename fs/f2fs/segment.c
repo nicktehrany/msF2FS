@@ -3638,8 +3638,9 @@ static unsigned int __get_stream_rr_policy(struct f2fs_sb_info *sbi,
 }
 
 static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi, 
-        unsigned int type, struct inode *inode)
+        unsigned int type, unsigned long ino)
 {
+    struct inode *inode = f2fs_iget(sbi->sb, ino);
     struct f2fs_inode_info *fi = F2FS_I(inode);
     unsigned int stream = 0;
 
@@ -3676,10 +3677,14 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
 }
 
 static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
-        int type, struct inode *inode)
+        int type, struct f2fs_io_info *fio)
 {
-    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
-        return __get_stream_stream_spf_policy(sbi, type, inode);
+    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF) {
+        if (!fio)
+            return 0;
+        else
+            return __get_stream_stream_spf_policy(sbi, type, fio->ino);
+    }
     else
         return __get_stream_rr_policy(sbi, type);
 }
@@ -3696,9 +3701,9 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	unsigned long long old_mtime;
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
-    struct inode *inode = f2fs_iget(sbi->sb, fio->ino);
 
-    *stream = f2fs_get_curseg_stream(sbi, type, inode);
+    f2fs_info(sbi, "Write for %u", fio->ino);
+    *stream = f2fs_get_curseg_stream(sbi, type, fio);
 
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
 
@@ -3724,9 +3729,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	 * __add_sum_entry should be resided under the curseg_mutex
 	 * because, this function updates a summary entry in the
 	 * current summary block.
-     * TODO: THIS WON'T WORK CORRECTLY IF WE HAVE SUMMARY IN EACH CURSEG STREAM
-     * WHEN WE TRY TO PIN TO THE FIRST STREAM FOR SUMMARY
-     * HAVE TO UPDATE ALL NAT SIT JOURNALS TO BE ON ALL STREAMS
 	 */
 	__add_sum_entry(sbi, type, sum, *stream);
 
@@ -4600,7 +4602,10 @@ static void write_normal_summaries(struct f2fs_sb_info *sbi,
 
 	for (i = type; i < end; i++) {
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        /* Currently summaries are exclusively on stream 0 */
+        /* TODO: CP and summaries are currently not supported for multi-streams,
+         * therefore only use summaries on stream 0. As a result, no recovery or
+         * re-mounting is possible at the moment.
+         */
         write_current_sum_page_at_stream(sbi, i, blkaddr + (i - type), 0);
 #else
 		write_current_sum_page(sbi, i, blkaddr + (i - type));
