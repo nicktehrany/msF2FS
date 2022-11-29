@@ -438,10 +438,11 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->main_area_zones);
 #ifdef CONFIG_F2FS_MULTI_STREAM
         seq_printf(s, "\n    Multi-Stream INFO:\n");
+        seq_printf(s, "  - Stream Allocation:\n");
         if (F2FS_OPTION(si->sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
-            seq_printf(s, "  - Stream Alloc Policy: %s\n", "SPF");
+            seq_printf(s, "         Policy: %3s\n", "SPF");
         else
-            seq_printf(s, "  - Stream Alloc Policy: %s\n", "SRR");
+            seq_printf(s, "         Policy: %3s\n", "SRR");
         seq_printf(s, "  - Maximum Streams: %u\n", 
                 si->nr_max_streams);
         seq_printf(s, "  - Active Streams: %u\n",
@@ -460,7 +461,16 @@ static int stat_show(struct seq_file *s, void *v)
                 __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_NODE),
                 __get_number_active_streams_for_type(si->sbi, CURSEG_WARM_NODE),
                 __get_number_active_streams_for_type(si->sbi, CURSEG_COLD_NODE));
-        seq_printf(s, "  - STREAM BITMAPS:\n");
+        if (F2FS_OPTION(si->sbi).stream_alloc_policy == STREAM_ALLOC_SPF) {
+            seq_printf(s, "      EXCLUSIVE:  [ %2u %2u %2u %2u %2u %2u  ]\n",
+                    __get_number_reserved_streams_for_type(si->sbi, CURSEG_HOT_DATA),
+                    __get_number_reserved_streams_for_type(si->sbi, CURSEG_WARM_DATA),
+                    __get_number_reserved_streams_for_type(si->sbi, CURSEG_COLD_DATA),
+                    __get_number_reserved_streams_for_type(si->sbi, CURSEG_HOT_NODE),
+                    __get_number_reserved_streams_for_type(si->sbi, CURSEG_WARM_NODE),
+                    __get_number_reserved_streams_for_type(si->sbi, CURSEG_COLD_NODE));
+        }
+        seq_printf(s, "  - ACTIVE STREAM BITMAPS:\n");
         for (i = 0; i < NR_CURSEG_PERSIST_TYPE; i++) {
             switch (i) {
                 case 0:
@@ -487,15 +497,78 @@ static int stat_show(struct seq_file *s, void *v)
                     seq_printf(s, "1 ");
                 else
                     seq_printf(s, "0 ");
-
             }
             seq_printf(s, "]\n");
         }
-        // TODO: no longer needed if we drop rr_stride
-        seq_printf(s, "  - Stream Allocation:\n");
-        seq_printf(s, "         Policy: %13s", "Round Robin\n");
-        seq_printf(s, "         RR Stride: %u\n",
-                F2FS_OPTION(si->sbi).rr_stride);
+        if (F2FS_OPTION(si->sbi).stream_alloc_policy == STREAM_ALLOC_SPF) {
+            seq_printf(s, "  - EXCLUSIVE STREAM BITMAPS:\n");
+            for (i = 0; i < NR_CURSEG_PERSIST_TYPE; i++) {
+                switch (i) {
+                    case 0:
+                        seq_printf(s, "       %s   [ ", "HOT_DATA");
+                        break;
+                    case 1:
+                        seq_printf(s, "       %s  [ ", "WARM_DATA");
+                        break;
+                    case 2:
+                        seq_printf(s, "       %s  [ ", "COLD_DATA");
+                        break;
+                    case 3:
+                        seq_printf(s, "       %s   [ ", "HOT_NODE");
+                        break;
+                    case 4:
+                        seq_printf(s, "       %s  [ ", "WAMR_NODE");
+                        break;
+                    case 5:
+                        seq_printf(s, "       %s  [ ", "COLD_NODE");
+                        break;
+                }
+                streams = __get_number_active_streams_for_type(si->sbi, i);
+                for (j = 0; j < streams; j++) {
+                    if (j == 0)
+                        seq_printf(s, "- ");
+                    else if (__test_stream_reserved(si->sbi, i, j))
+                        seq_printf(s, "1 ");
+                    else
+                        seq_printf(s, "0 ");
+                }
+                seq_printf(s, "]\n");
+            }
+            seq_printf(s, "  - EXCLUSIVE STREAM INO-MAP:\n");
+            for (i = 0; i < NR_CURSEG_PERSIST_TYPE; i++) {
+                switch (i) {
+                    case 0:
+                        seq_printf(s, "       %s   [ ", "HOT_DATA");
+                        break;
+                    case 1:
+                        seq_printf(s, "       %s  [ ", "WARM_DATA");
+                        break;
+                    case 2:
+                        seq_printf(s, "       %s  [ ", "COLD_DATA");
+                        break;
+                    case 3:
+                        seq_printf(s, "       %s   [ ", "HOT_NODE");
+                        break;
+                    case 4:
+                        seq_printf(s, "       %s  [ ", "WAMR_NODE");
+                        break;
+                    case 5:
+                        seq_printf(s, "       %s  [ ", "COLD_NODE");
+                        break;
+                }
+                streams = __get_number_active_streams_for_type(si->sbi, i);
+                for (j = 0; j < streams; j++) {
+                    if (j == 0)
+                        seq_printf(s, "- ");
+                    else if (__test_stream_reserved(si->sbi, i, j))
+                        seq_printf(s, "%lu ", __get_reserved_stream_inode(si->sbi, i, j));
+                    else
+                        seq_printf(s, "0 ");
+
+                }
+                seq_printf(s, "]\n");
+            }
+        }
 		seq_printf(s, "\n    TYPE     %8s %8s %8s %8s %10s %10s %10s\n",
 			   "STREAM", "segno", "secno", "zoneno", "dirty_seg", "full_seg", "valid_blk");
         streams = __get_number_active_streams_for_type(si->sbi, CURSEG_HOT_DATA);

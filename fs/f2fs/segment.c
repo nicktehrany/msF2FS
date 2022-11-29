@@ -3644,21 +3644,34 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
     unsigned int stream = 0;
 
     f2fs_down_read(&fi->i_sem);
+
     if (type < NR_CURSEG_DATA_TYPE && fi->i_has_pinned_data_stream) {
-        stream = fi->i_data_stream;
+        /* another file has exclusively claimed stream, need to migrate */
+        if (!inode->i_exclusive_data_stream &&
+                __test_stream_reserved(sbi, type, fi->i_data_stream)) {
+            f2fs_up_read(&fi->i_sem);
+            stream = __set_and_return_file_data_stream(sbi, type, inode);
+        } else {
+            stream = fi->i_data_stream;
+            f2fs_up_read(&fi->i_sem);
+        }
+    } else if (type < NR_CURSEG_DATA_TYPE && !fi->i_has_pinned_data_stream) {
+        /* need to release lock before calling setting function */
+        f2fs_up_read(&fi->i_sem);
+        stream = __set_and_return_file_data_stream(sbi, type, inode);
     } else if (type >= NR_CURSEG_DATA_TYPE && fi->i_has_pinned_node_stream) {
         stream = fi->i_node_stream;
-    } else {
         f2fs_up_read(&fi->i_sem);
-        f2fs_down_write(&fi->i_sem);
-        stream = __set_and_return_stream_for_file(sbi, type, fi);
-        f2fs_up_write(&fi->i_sem);
-        goto set_stream;
+    }  else if (type >= NR_CURSEG_DATA_TYPE && !fi->i_has_pinned_node_stream) {
+        f2fs_up_read(&fi->i_sem);
+        stream = __set_and_return_file_node_stream(sbi, type, inode);
     }
 
-    f2fs_up_read(&fi->i_sem);
+    /* file no longer needs exclusive data stream, release the exclusive stream */
+    if (!inode->i_exclusive_data_stream && 
+            fi->i_has_exclusive_data_stream)
+        __release_exclusive_data_stream(sbi, inode);
 
-set_stream:
     return stream;
 }
 
@@ -4474,10 +4487,6 @@ static int restore_curseg_summaries(struct f2fs_sb_info *sbi)
 	struct f2fs_journal *nat_j = CURSEG_I(sbi, CURSEG_HOT_DATA)->journal;
 	int type = CURSEG_HOT_DATA;
 	int err;
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    int j;
-    unsigned int streams;
-#endif
 
 	if (is_set_ckpt_flags(sbi, CP_COMPACT_SUM_FLAG)) {
 		int npages = f2fs_npages_for_summary_flush(sbi, true);
@@ -4498,22 +4507,16 @@ static int restore_curseg_summaries(struct f2fs_sb_info *sbi)
 				sum_blk_addr(sbi, NR_CURSEG_PERSIST_TYPE, type),
 				NR_CURSEG_PERSIST_TYPE - type, META_CP, true);
 
+	for (; type <= CURSEG_COLD_NODE; type++) {
 #ifdef CONFIG_F2FS_MULTI_STREAM
-	for (; type <= CURSEG_COLD_NODE; type++) {
-        streams = __get_number_active_streams_for_type(sbi, type);
-        for (j = 0; j < streams; j++) {
-            err = read_normal_summaries(sbi, type, j);
-            if (err)
-                return err;
-        }
-    }
+        /* Currently summaries are exclusively on stream 0 */
+        err = read_normal_summaries(sbi, type, 0);
 #else
-	for (; type <= CURSEG_COLD_NODE; type++) {
         err = read_normal_summaries(sbi, type);
+#endif
         if (err)
             return err;
     }
-#endif
 
 	/* sanity check for summary blocks */
 	if (nats_in_cursum(nat_j) > NAT_JOURNAL_ENTRIES ||
@@ -4589,27 +4592,20 @@ static void write_normal_summaries(struct f2fs_sb_info *sbi,
 					block_t blkaddr, int type)
 {
 	int i, end;
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    int streams, j;
-#endif
 
 	if (IS_DATASEG(type))
 		end = type + NR_CURSEG_DATA_TYPE;
 	else
 		end = type + NR_CURSEG_NODE_TYPE;
 
+	for (i = type; i < end; i++) {
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    for (i = type; i < end; i++)
-    { 
-        streams = __get_number_active_streams_for_type(sbi, i - type);
-
-        for (j = 0; j < streams; j++)
-            write_current_sum_page_at_stream(sbi, i, blkaddr + (i - type), j);
-    }
+        /* Currently summaries are exclusively on stream 0 */
+        write_current_sum_page_at_stream(sbi, i, blkaddr + (i - type), 0);
 #else
-	for (i = type; i < end; i++)
 		write_current_sum_page(sbi, i, blkaddr + (i - type));
 #endif
+    }
 }
 
 void f2fs_write_data_summaries(struct f2fs_sb_info *sbi, block_t start_blk)

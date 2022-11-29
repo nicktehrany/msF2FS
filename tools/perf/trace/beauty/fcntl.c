@@ -90,12 +90,22 @@ size_t syscall_arg__scnprintf_fcntl_arg(char *bf, size_t size, struct syscall_ar
 	 * We still don't grab the contents of pointers on entry or exit,
 	 * so just print them as hex numbers
 	 */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	if (cmd == F_SETLK || cmd == F_SETLKW || cmd == F_GETLK ||
+	    cmd == F_OFD_SETLK || cmd == F_OFD_SETLKW || cmd == F_OFD_GETLK ||
+	    cmd == F_GETOWN_EX || cmd == F_SETOWN_EX ||
+	    cmd == F_GET_RW_HINT || cmd == F_SET_RW_HINT ||
+	    cmd == F_GET_FILE_RW_HINT || cmd == F_SET_FILE_RW_HINT ||
+        cmd == F_SET_EXCLUSIVE_DATA_STREAM || cmd == F_UNSET_EXCLUSIVE_DATA_STREAM)
+		return syscall_arg__scnprintf_hex(bf, size, arg);
+#else
 	if (cmd == F_SETLK || cmd == F_SETLKW || cmd == F_GETLK ||
 	    cmd == F_OFD_SETLK || cmd == F_OFD_SETLKW || cmd == F_OFD_GETLK ||
 	    cmd == F_GETOWN_EX || cmd == F_SETOWN_EX ||
 	    cmd == F_GET_RW_HINT || cmd == F_SET_RW_HINT ||
 	    cmd == F_GET_FILE_RW_HINT || cmd == F_SET_FILE_RW_HINT)
 		return syscall_arg__scnprintf_hex(bf, size, arg);
+#endif
 
 	return syscall_arg__scnprintf_long(bf, size, arg);
 }

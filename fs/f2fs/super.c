@@ -1727,9 +1727,13 @@ static void f2fs_destroy_multi_stream_info(struct f2fs_sb_info *sbi)
 {
 	int i;
 
-	for (i = 0; i < NR_CURSEG_TYPE; i++)
+	for (i = 0; i < NR_CURSEG_TYPE; i++) {
 		kvfree(sbi->streammap[i]);
+		kvfree(sbi->resmap[i]);
+    }
+
 	kvfree(sbi->streammap);
+	kvfree(sbi->resmap);
 }
 #endif
 
@@ -2267,10 +2271,20 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 	if (!sbi->streammap)
 		return -ENOMEM;
 
+    sbi->resmap = f2fs_kvzalloc(sbi, NR_CURSEG_TYPE * sizeof(unsigned long), 
+            GFP_KERNEL);
+
+	if (!sbi->resmap)
+		return -ENOMEM;
+
 	for (i = 0; i < NR_CURSEG_TYPE; i++) {
 		sbi->streammap[i] = f2fs_kvzalloc(sbi, f2fs_bitmap_size(MAX_ACTIVE_LOGS),
                 GFP_KERNEL);
 		if (!sbi->streammap[i])
+			return -ENOMEM;
+		sbi->resmap[i] = f2fs_kvzalloc(sbi, f2fs_bitmap_size(MAX_ACTIVE_LOGS),
+                GFP_KERNEL);
+		if (!sbi->resmap[i])
 			return -ENOMEM;
 	}
 
@@ -2278,6 +2292,8 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 	spin_lock(&sbi->streammap_lock);
     atomic_set(&sbi->nr_active_streams, 0);
 	spin_unlock(&sbi->streammap_lock);
+
+    spin_lock_init(&sbi->resmap_lock);
 
     if (F2FS_OPTION(sbi).set_arg_nr_max_streams || F2FS_OPTION(sbi).set_arg_per_stream_max) {
         sbi->nr_max_streams = F2FS_OPTION(sbi).arg_nr_max_streams;
@@ -2291,8 +2307,6 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
     } 
 
     for (i = 0; i <= CURSEG_COLD_NODE; i++) {
-        /* set default to maximum that is never reachable (since we have at least one type of each stream,
-         * 11 maximum of a type), such that the we know the first allocation and start it at 0 */
         atomic_set(&sbi->rr_active_stream[i], MAX_ACTIVE_LOGS);
         atomic_set(&sbi->rr_stride_ctr[i], 0);
         spin_lock_init(&sbi->rr_active_stream_lock[i]);
