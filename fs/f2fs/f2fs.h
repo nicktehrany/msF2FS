@@ -195,6 +195,7 @@ struct f2fs_mount_info {
     bool set_arg_per_stream_max; /* indicate user provided per stream maximums */
     uint nr_streams[NR_CURSEG_TYPE];
     uint rr_stride;
+    int stream_alloc_policy; /* Stream allocation policy: SRR or SPF (default) */
 #endif
 };
 
@@ -284,6 +285,16 @@ enum {
 					 */
 	META_GENERIC,
 };
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+/* 
+ * indicate stream allocation policy
+ */
+enum {
+    STREAM_ALLOC_SRR,
+    STREAM_ALLOC_SPF
+};
+#endif
 
 /* for the list of ino */
 enum {
@@ -828,6 +839,21 @@ struct f2fs_inode_info {
 	unsigned char i_compress_level;		/* compress level (lz4hc,zstd) */
 	unsigned short i_compress_flag;		/* compress flag */
 	unsigned int i_cluster_size;		/* cluster size */
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    /* 
+     * We allow only a single stream for NODE and mutliple for DATA, making the 
+     * NODE related values not useful. However, we utilize them to be able to use
+     * the same code for DATA and NODE, for future updates where NODE streams are
+     * possible.
+     * */
+    unsigned int i_data_stream; /* stream that the DATA of the inode is pinned to */
+    bool i_has_pinned_data_stream; /* indicate stream pinning has been initialized */
+    unsigned int i_node_stream; /* stream that the NODE of the inode is pinned to */
+    bool i_has_pinned_node_stream; /* indicate stream pinning has been initialized */
+    bool i_has_exclusive_data_stream; /* indicate if file holds a data stream exclusively */
+    bool i_should_release_stream; /* indicate if file was deleted and should release stream */
+#endif
 };
 
 static inline void get_extent_info(struct extent_info *ext,
@@ -1855,10 +1881,13 @@ struct f2fs_sb_info {
     uint nr_max_streams;
     atomic_t nr_active_streams;
     spinlock_t streammap_lock;
-    unsigned long **streammap;
+    unsigned long **streammap; /* bitmap per TYPE to know active streams for each */
+    unsigned long streams_inomap[NR_CURSEG_TYPE * MAX_ACTIVE_LOGS]; /* Maintain the inode number that holds an exclusive stream */
     spinlock_t rr_active_stream_lock[NR_CURSEG_TYPE];
     atomic_t rr_active_stream[NR_CURSEG_TYPE];
     atomic_t rr_stride_ctr[NR_CURSEG_TYPE];
+    spinlock_t resmap_lock;
+    unsigned long **resmap; /* bitmap per TYPE to maintain reserved exclusive streams for files */
 #endif
 };
 

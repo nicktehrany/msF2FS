@@ -108,6 +108,7 @@ enum {
     Opt_warm_node_streams,
     Opt_cold_node_streams,
     Opt_rr_stride,
+    Opt_stream_policy,
 	Opt_disable_ext_identify,
 	Opt_inline_xattr,
 	Opt_noinline_xattr,
@@ -191,6 +192,7 @@ static match_table_t f2fs_tokens = {
 	{Opt_warm_node_streams, "warm_node_streams=%u"},
 	{Opt_cold_node_streams, "cold_node_streams=%u"},
     {Opt_rr_stride, "rr_stride=%u"},
+    {Opt_stream_policy, "stream_policy=%s"},
 	{Opt_disable_ext_identify, "disable_ext_identify"},
 	{Opt_inline_xattr, "inline_xattr"},
 	{Opt_noinline_xattr, "noinline_xattr"},
@@ -971,6 +973,21 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 				return -EINVAL;
             F2FS_OPTION(sbi).rr_stride = arg;
             break;
+        case Opt_stream_policy:
+			name = match_strdup(&args[0]);
+
+			if (!name)
+				return -ENOMEM;
+			if (!strcmp(name, "srr")) {
+				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SRR;
+			} else if (!strcmp(name, "spf")) {
+				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SPF;
+			} else {
+				kfree(name);
+				return -EINVAL;
+			}
+			kfree(name);
+			break;
 #else
 			if (arg != 2 && arg != 4 &&
 				arg != NR_CURSEG_PERSIST_TYPE)
@@ -1710,9 +1727,13 @@ static void f2fs_destroy_multi_stream_info(struct f2fs_sb_info *sbi)
 {
 	int i;
 
-	for (i = 0; i < NR_CURSEG_TYPE; i++)
+	for (i = 0; i < NR_CURSEG_TYPE; i++) {
 		kvfree(sbi->streammap[i]);
+		kvfree(sbi->resmap[i]);
+    }
+
 	kvfree(sbi->streammap);
+	kvfree(sbi->resmap);
 }
 #endif
 
@@ -2162,6 +2183,10 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 	seq_printf(seq, ",hot_node_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_HOT_NODE]);
 	seq_printf(seq, ",warm_node_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_WARM_NODE]);
 	seq_printf(seq, ",cold_node_streams=%u", F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_NODE]);
+    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
+        seq_printf(seq, ",stream_alloc=%s", "ssr");
+    else
+        seq_printf(seq, ",stream_alloc=%s", "spf");
 #endif
 	if (test_opt(sbi, RESERVE_ROOT))
 		seq_printf(seq, ",reserve_root=%u,resuid=%u,resgid=%u",
@@ -2246,10 +2271,20 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 	if (!sbi->streammap)
 		return -ENOMEM;
 
+    sbi->resmap = f2fs_kvzalloc(sbi, NR_CURSEG_TYPE * sizeof(unsigned long), 
+            GFP_KERNEL);
+
+	if (!sbi->resmap)
+		return -ENOMEM;
+
 	for (i = 0; i < NR_CURSEG_TYPE; i++) {
 		sbi->streammap[i] = f2fs_kvzalloc(sbi, f2fs_bitmap_size(MAX_ACTIVE_LOGS),
                 GFP_KERNEL);
 		if (!sbi->streammap[i])
+			return -ENOMEM;
+		sbi->resmap[i] = f2fs_kvzalloc(sbi, f2fs_bitmap_size(MAX_ACTIVE_LOGS),
+                GFP_KERNEL);
+		if (!sbi->resmap[i])
 			return -ENOMEM;
 	}
 
@@ -2257,6 +2292,8 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
 	spin_lock(&sbi->streammap_lock);
     atomic_set(&sbi->nr_active_streams, 0);
 	spin_unlock(&sbi->streammap_lock);
+
+    spin_lock_init(&sbi->resmap_lock);
 
     if (F2FS_OPTION(sbi).set_arg_nr_max_streams || F2FS_OPTION(sbi).set_arg_per_stream_max) {
         sbi->nr_max_streams = F2FS_OPTION(sbi).arg_nr_max_streams;
@@ -2270,7 +2307,7 @@ static int f2fs_init_multi_stream_info(struct f2fs_sb_info *sbi)
     } 
 
     for (i = 0; i <= CURSEG_COLD_NODE; i++) {
-        atomic_set(&sbi->rr_active_stream[i], 0);
+        atomic_set(&sbi->rr_active_stream[i], MAX_ACTIVE_LOGS);
         atomic_set(&sbi->rr_stride_ctr[i], 0);
         spin_lock_init(&sbi->rr_active_stream_lock[i]);
     }
@@ -2292,6 +2329,7 @@ static void default_options(struct f2fs_sb_info *sbi)
 		F2FS_OPTION(sbi).active_logs = NR_CURSEG_PERSIST_TYPE;
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
+    F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SPF;
     F2FS_OPTION(sbi).nr_max_streams = NR_CURSEG_PERSIST_TYPE;
     F2FS_OPTION(sbi).arg_nr_max_streams = 0;
     F2FS_OPTION(sbi).set_arg_nr_max_streams = false;

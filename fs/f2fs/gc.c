@@ -1231,6 +1231,7 @@ static int move_data_block(struct inode *inode, block_t bidx,
 		.encrypted_page = NULL,
 		.in_list = false,
 		.retry = false,
+        .stream = 0,
 	};
 	struct dnode_of_data dn;
 	struct f2fs_summary sum;
@@ -1242,6 +1243,11 @@ static int move_data_block(struct inode *inode, block_t bidx,
 	int type = fio.sbi->am.atgc_enabled && (gc_type == BG_GC) &&
 				(fio.sbi->gc_mode != GC_URGENT_HIGH) ?
 				CURSEG_ALL_DATA_ATGC : CURSEG_COLD_DATA;
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+#endif
 
 	/* do not read out */
 	page = f2fs_grab_cache_page(inode->i_mapping, bidx, false);
@@ -1320,9 +1326,18 @@ static int move_data_block(struct inode *inode, block_t bidx,
 
 	/* allocate block address */
 #ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned int stream;
-	f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,
-				&sum, type, NULL, &stream); // TODO Unused stream
+    /* If a file is GCed and is holding an exclusive stream, it must be released.
+     * Since GC moves data to COLD, this avoids locking exclusive streams
+     * if the data is no longer of the same type. 
+     */
+    f2fs_down_read(&fi->i_sem);
+    if (fi->i_has_exclusive_data_stream)
+        __release_exclusive_data_stream(fio.sbi, inode);
+    f2fs_up_read(&fi->i_sem);
+
+    f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,
+            &sum, type, NULL, &stream);
+    fio.stream = stream;
 #else
 	f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,
 				&sum, type, NULL);
@@ -1960,7 +1975,8 @@ static int free_segment_range(struct f2fs_sb_info *sbi,
 	/* Move out cursegs from the target range */
 	for (type = CURSEG_HOT_DATA; type < NR_CURSEG_PERSIST_TYPE; type++)
 #ifdef CONFIG_F2FS_MULTI_STREAM
-		f2fs_allocate_segment_for_resize(sbi, type, start, end, 0); // TODO: Actual implementation for GC of streams
+        /* Currently GC segment allocations are pinned to stream 0 */
+		f2fs_allocate_segment_for_resize(sbi, type, start, end, 0);
 #else
 		f2fs_allocate_segment_for_resize(sbi, type, start, end);
 #endif
