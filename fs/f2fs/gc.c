@@ -1332,10 +1332,12 @@ static int move_data_block(struct inode *inode, block_t bidx,
      * Since GC moves data to COLD, this avoids locking exclusive streams
      * if the data is no longer of the same type. 
      */
-    f2fs_down_read(&fi->i_sem);
-    if (fi->i_has_exclusive_data_stream)
-        __release_exclusive_data_stream(fio.sbi, inode);
-    f2fs_up_read(&fi->i_sem);
+    if (F2FS_OPTION(fio.sbi).stream_alloc_policy == STREAM_ALLOC_SRR) {
+        f2fs_down_read(&fi->i_sem);
+        if (fi->i_has_exclusive_data_stream)
+            __release_exclusive_data_stream(fio.sbi, inode);
+        f2fs_up_read(&fi->i_sem);
+    }
 
     f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,
             &sum, type, NULL, &stream);

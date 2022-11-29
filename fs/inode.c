@@ -229,10 +229,7 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 #endif
 	inode->i_flctx = NULL;
 	this_cpu_inc(nr_inodes);
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
     inode->i_exclusive_data_stream = false;
-#endif
 
 	return 0;
 out:

@@ -684,9 +684,7 @@ struct inode {
 	struct fsverity_info	*i_verity_info;
 #endif
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
     u8 i_exclusive_data_stream;
-#endif
 
 	void			*i_private; /* fs or device private pointer */
 } __randomize_layout;

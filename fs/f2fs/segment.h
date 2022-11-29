@@ -615,12 +615,17 @@ static inline unsigned int __get_current_stream_and_set_next_stream_active(struc
 	spin_lock(&sbi->rr_active_stream_lock[type]);
     stream = atomic_read(&sbi->rr_active_stream[type]);
 
+    /* first init */
+    if (stream == MAX_ACTIVE_LOGS)
+        goto first_init;
+
     /* Only a single stream, no need for doing RR */
     if (F2FS_OPTION(sbi).nr_streams[type] == 1) 
         goto unchanged;
 
     next_stream = __test_and_update_rr_stride(sbi, type);
     if (next_stream && stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
+first_init:
         atomic_set(&sbi->rr_active_stream[type], 0);
         stream = 0;
     } else if (next_stream) {
