@@ -688,6 +688,13 @@ static inline unsigned int __get_next_file_stream_rr(struct f2fs_sb_info *sbi,
     return stream;
 }
 
+/* sets and returns a file stream for an inode based on SPF policy.
+ * Assumes the caller is holding the spinlock i_streams_lock for the inode.
+ *
+ * Note, this function modifies the inode in all cases, therefore after releasing 
+ * the spinlock i_streams_lock in the calling function, 
+ * f2fs_mark_inode_dirty_sync(inode, true) should be called 
+ */
 static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info *sbi,
         unsigned int type, struct inode *inode)
 {
@@ -702,13 +709,16 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
             goto fail_set_exclusive;
 
         spin_lock(&sbi->resmap_lock);
+
         /* Stream 0 is a special stream, non-reservable by files for exclusive access */
         next_free_stream = find_next_zero_bit_le(sbi->resmap[type], MAX_ACTIVE_LOGS, 1);
 
         /* we always need to keep at least 1 non-exclusive stream for data (stream 0), therefore
          * fail exclusive stream allocation if all other streams are reserved */
         if (next_free_stream == active_streams) {
+            /* need to release lock because caller may also attempt lock */
             spin_unlock(&sbi->resmap_lock);
+
             /* fall back to RR based file stream allocation */
             stream = __get_next_file_stream_rr(sbi, type);
             goto fail_set_exclusive;
@@ -716,20 +726,17 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
             stream = next_free_stream;
             set_bit_le(stream, sbi->resmap[type]);
             sbi->streams_inomap[stream * NR_CURSEG_TYPE + type] = inode->i_ino;
+
             spin_unlock(&sbi->resmap_lock);
-            f2fs_down_write(&fi->i_sem);
             fi->i_has_exclusive_data_stream = true;
-            f2fs_up_write(&fi->i_sem);
         }
     } else {
         stream = __get_next_file_stream_rr(sbi, type);
     }
 
 set_stream:
-    f2fs_down_write(&fi->i_sem);
     fi->i_data_stream = stream;
     fi->i_has_pinned_data_stream = true;
-    f2fs_up_write(&fi->i_sem);
 
     return stream;
 
@@ -739,7 +746,6 @@ fail_set_exclusive:
     inode->i_exclusive_data_stream = false;
 
     goto set_stream;
-
 }
 
 /*
@@ -816,9 +822,7 @@ static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi,
 	__clear_bit_le(stream, sbi->resmap[type]);
 	spin_unlock(&sbi->resmap_lock);
 
-    f2fs_down_write(&fi->i_sem);
     fi->i_has_exclusive_data_stream = false;
-    f2fs_up_write(&fi->i_sem);
 }
 
 /* Different from __release_exclusive_data_stream this function is meant for

@@ -3770,6 +3770,10 @@ bool f2fs_release_folio(struct folio *folio, gfp_t wait)
 {
 	struct f2fs_sb_info *sbi;
 
+	/* TODO: TEMP FIX on NULL pointer deref here */
+	/* if (!folio) */
+	/* 	return true; */
+
 	/* If this is dirty folio, keep private data */
 	if (folio_test_dirty(folio))
 		return false;

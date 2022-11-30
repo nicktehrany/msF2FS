@@ -492,7 +492,7 @@ static int stat_show(struct seq_file *s, void *v)
                     seq_printf(s, "       %s  [ ", "COLD_NODE");
                     break;
             }
-            for (j = 0; j < si->sbi->nr_max_streams; j++) {
+            for (j = 0; j < si->sbi->nr_max_streams - CURSEG_COLD_NODE; j++) {
                 if(__test_inuse_stream(si->sbi, i, j))
                     seq_printf(s, "1 ");
                 else

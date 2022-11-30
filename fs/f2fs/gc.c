@@ -1249,6 +1249,7 @@ static int move_data_block(struct inode *inode, block_t bidx,
 #ifdef CONFIG_F2FS_MULTI_STREAM
     unsigned int stream;
     struct f2fs_inode_info *fi = F2FS_I(inode);
+    bool dirtied = false;
 #endif
 
 	/* do not read out */
@@ -1333,10 +1334,14 @@ static int move_data_block(struct inode *inode, block_t bidx,
      * if the data is no longer of the same type. 
      */
     if (F2FS_OPTION(fio.sbi).stream_alloc_policy == STREAM_ALLOC_SRR) {
-        f2fs_down_read(&fi->i_sem);
-        if (fi->i_has_exclusive_data_stream)
+        spin_lock(&fi->i_streams_lock);
+        if (fi->i_has_exclusive_data_stream) {
             __release_exclusive_data_stream(fio.sbi, inode);
-        f2fs_up_read(&fi->i_sem);
+            dirtied = true;
+        }
+        spin_unlock(&fi->i_streams_lock);
+        if (dirtied)
+            f2fs_mark_inode_dirty_sync(inode, true);
     }
 
     f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,

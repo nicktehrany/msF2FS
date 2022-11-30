@@ -853,6 +853,7 @@ struct f2fs_inode_info {
     bool i_has_pinned_node_stream; /* indicate stream pinning has been initialized */
     bool i_has_exclusive_data_stream; /* indicate if file holds a data stream exclusively */
     bool i_should_release_stream; /* indicate if file was deleted and should release stream */
+    spinlock_t i_streams_lock; /* lock the streams info */
 #endif
 };
 

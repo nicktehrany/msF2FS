@@ -3640,46 +3640,57 @@ static unsigned int __get_stream_rr_policy(struct f2fs_sb_info *sbi,
 static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi, 
         unsigned int type, unsigned long ino)
 {
-    struct inode *inode = f2fs_iget(sbi->sb, ino);
-    struct f2fs_inode_info *fi = F2FS_I(inode);
+    struct inode *inode;
+    struct f2fs_inode_info *fi;
     unsigned int stream = 0;
     enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
+    bool dirtied = false;
 
-    f2fs_down_read(&fi->i_sem);
+    inode = f2fs_iget(sbi->sb, ino);
+	if (IS_ERR(inode)) {
+        /* Something failed - fall back to allocating on stream 0 */
+        return 0;
+	}
+
+    fi = F2FS_I(inode);
+
+    spin_lock(&fi->i_streams_lock);
 
     if (ptype == DATA) {
         if (!fi->i_has_pinned_data_stream) {
-            /* need to release lock before calling setting function */
-            f2fs_up_read(&fi->i_sem);
             stream = __set_and_return_file_data_stream(sbi, type, inode);
-        }
-        /* another file has exclusively claimed stream, need to migrate */
-        else if (!inode->i_exclusive_data_stream &&
+            dirtied = true;
+        } else if (!inode->i_exclusive_data_stream &&
                 __test_stream_reserved(sbi, type, fi->i_data_stream)) {
-            f2fs_up_read(&fi->i_sem);
+            /* another file has exclusively claimed stream, need to migrate */
             stream = __set_and_return_file_data_stream(sbi, type, inode);
-        } else {
+            dirtied = true;
+        } else
             stream = fi->i_data_stream;
-            f2fs_up_read(&fi->i_sem);
-        }
     } else if (ptype == NODE) {
         /* TODO: Currently no NODE streams are supported, therefore everything
          * is on stream 0. Once added, logic is same as for DATA. */
-        f2fs_up_read(&fi->i_sem);
         stream = 0;
     } else if (ptype == META) {
         /* This is for pinned files or SSR (which multi-streams does not support).
          * If there are pinned files, it goes to the default stream 0 */
-        f2fs_up_read(&fi->i_sem);
         stream = 0;
     }
 
     /* file no longer needs exclusive data stream, release the exclusive stream.
      * Any inode flag change should trigger this, therefore it is independent of 
      * the ptype */
-    if (!inode->i_exclusive_data_stream && 
-            fi->i_has_exclusive_data_stream)
+    if (!inode->i_exclusive_data_stream && fi->i_has_exclusive_data_stream) {
         __release_exclusive_data_stream(sbi, inode);
+        dirtied = true; 
+    }
+
+    spin_unlock(&fi->i_streams_lock);
+
+    if (dirtied)
+        f2fs_mark_inode_dirty_sync(inode, true);
+
+    iput(inode);
 
     return stream;
 }
