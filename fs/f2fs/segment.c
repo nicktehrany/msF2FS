@@ -3643,12 +3643,18 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
     struct inode *inode = f2fs_iget(sbi->sb, ino);
     struct f2fs_inode_info *fi = F2FS_I(inode);
     unsigned int stream = 0;
+    enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
 
     f2fs_down_read(&fi->i_sem);
 
-    if (type < NR_CURSEG_DATA_TYPE && fi->i_has_pinned_data_stream) {
+    if (ptype == DATA) {
+        if (!fi->i_has_pinned_data_stream) {
+            /* need to release lock before calling setting function */
+            f2fs_up_read(&fi->i_sem);
+            stream = __set_and_return_file_data_stream(sbi, type, inode);
+        }
         /* another file has exclusively claimed stream, need to migrate */
-        if (!inode->i_exclusive_data_stream &&
+        else if (!inode->i_exclusive_data_stream &&
                 __test_stream_reserved(sbi, type, fi->i_data_stream)) {
             f2fs_up_read(&fi->i_sem);
             stream = __set_and_return_file_data_stream(sbi, type, inode);
@@ -3656,19 +3662,21 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
             stream = fi->i_data_stream;
             f2fs_up_read(&fi->i_sem);
         }
-    } else if (type < NR_CURSEG_DATA_TYPE && !fi->i_has_pinned_data_stream) {
-        /* need to release lock before calling setting function */
+    } else if (ptype == NODE) {
+        /* TODO: Currently no NODE streams are supported, therefore everything
+         * is on stream 0. Once added, logic is same as for DATA. */
         f2fs_up_read(&fi->i_sem);
-        stream = __set_and_return_file_data_stream(sbi, type, inode);
-    } else if (type >= NR_CURSEG_DATA_TYPE && fi->i_has_pinned_node_stream) {
-        stream = fi->i_node_stream;
+        stream = 0;
+    } else if (ptype == META) {
+        /* This is for pinned files or SSR (which multi-streams does not support).
+         * If there are pinned files, it goes to the default stream 0 */
         f2fs_up_read(&fi->i_sem);
-    }  else if (type >= NR_CURSEG_DATA_TYPE && !fi->i_has_pinned_node_stream) {
-        f2fs_up_read(&fi->i_sem);
-        stream = __set_and_return_file_node_stream(sbi, type, inode);
+        stream = 0;
     }
 
-    /* file no longer needs exclusive data stream, release the exclusive stream */
+    /* file no longer needs exclusive data stream, release the exclusive stream.
+     * Any inode flag change should trigger this, therefore it is independent of 
+     * the ptype */
     if (!inode->i_exclusive_data_stream && 
             fi->i_has_exclusive_data_stream)
         __release_exclusive_data_stream(sbi, inode);
@@ -3679,12 +3687,10 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
 static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
         int type, struct f2fs_io_info *fio)
 {
-    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF) {
-        if (!fio)
-            return 0;
-        else
+    if (!fio)
+        return 0;
+    else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
             return __get_stream_stream_spf_policy(sbi, type, fio->ino);
-    }
     else
         return __get_stream_rr_policy(sbi, type);
 }

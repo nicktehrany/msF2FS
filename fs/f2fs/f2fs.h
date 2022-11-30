@@ -1163,6 +1163,19 @@ enum temp_type {
 	NR_TEMP_TYPE,
 };
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline enum page_type PAGE_TYPE_OF_TEMP_TYPE(unsigned int type)
+{
+    if (type < NR_CURSEG_DATA_TYPE)
+        return DATA;
+    else if (type >= NR_CURSEG_DATA_TYPE && type < NR_CURSEG_PERSIST_TYPE)
+        return NODE;
+
+    /* Anything not DATA or NODE is not supported by streams, hence just
+     * return something to indicate this */
+    return META;
+}
+#endif
 enum need_lock_type {
 	LOCK_REQ = 0,
 	LOCK_DONE,
