@@ -3707,6 +3707,36 @@ static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi,
     else
         return __get_stream_rr_policy(sbi, type);
 }
+
+static void __update_file_stream(struct f2fs_sb_info *sbi,
+        unsigned long ino, int type, unsigned int stream)
+{
+    struct inode *inode;
+    struct f2fs_inode_info *fi;
+    enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
+
+    inode = f2fs_iget(sbi->sb, ino);
+	if (IS_ERR(inode)) {
+        /* No inode, avoid any info updating */
+        return;
+	}
+
+    fi = F2FS_I(inode);
+
+    spin_lock(&fi->i_streams_lock);
+
+    /* Currently no NODE streams are supported, therefore everything
+     * is on stream 0, and we only need to set DATA stream info. */
+    if (ptype == DATA) {
+        fi->i_data_stream = stream;
+        fi->i_has_pinned_data_stream = true;
+        f2fs_mark_inode_dirty_sync(inode, true);
+    } 
+
+    spin_unlock(&fi->i_streams_lock);
+
+    iput(inode);
+}
 #endif
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
@@ -3724,27 +3754,29 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
     int i = 0;
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
-
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
     
     if (curseg->segno == NULL_SEGNO) {
         /* Stream is out of space on the device, this should be a rare occasion where we
          * ignore the assigned stream and use a First Fit policy into other streams of the type.
-         * At least one of the streams must still have space, because F2FS would otherwise
-         * have had to do GC before calling f2fs_allocate_data_block.
+         * Once a stream with space is found it is the new assigned stream for the inode.
+         *
+         * At least one of the streams MUST still have space, because otherwise we would
+         * have had done GC before calling f2fs_allocate_data_block.
          */
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
         while (i < active_streams){
             curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
-            if (curseg->segno != NULL_SEGNO)
+            if (curseg->segno != NULL_SEGNO) {
+                __update_file_stream(sbi, fio->ino, type, *stream);
                 break;
+            }
 
             (*stream)++;
         }
     }
-
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
