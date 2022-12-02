@@ -3637,7 +3637,7 @@ static unsigned int __get_stream_rr_policy(struct f2fs_sb_info *sbi,
     return __get_current_stream_and_set_next_stream_active(sbi, type);
 }
 
-static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi, 
+static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi, 
         unsigned int type, unsigned long ino)
 {
     struct inode *inode;
@@ -3703,7 +3703,7 @@ static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi,
     if (!fio)
         return 0;
     else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
-            return __get_stream_stream_spf_policy(sbi, type, fio->ino);
+            return __get_stream_spf_policy(sbi, type, fio->ino);
     else
         return __get_stream_rr_policy(sbi, type);
 }
