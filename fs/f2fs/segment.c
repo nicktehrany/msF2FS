@@ -3679,7 +3679,9 @@ static unsigned int __get_stream_stream_spf_policy(struct f2fs_sb_info *sbi,
 
     /* file no longer needs exclusive data stream, release the exclusive stream.
      * Any inode flag change should trigger this, therefore it is independent of 
-     * the ptype */
+     * the ptype. Since only DATA can have streams, technically it will only release
+     * these particular streams.
+     */
     if (!inode->i_exclusive_data_stream && fi->i_has_exclusive_data_stream) {
         __release_exclusive_data_stream(sbi, inode);
         dirtied = true; 
@@ -3718,10 +3720,31 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	unsigned long long old_mtime;
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
+    unsigned int active_streams;
+    int i = 0;
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
+    
+    if (curseg->segno == NULL_SEGNO) {
+        /* Stream is out of space on the device, this should be a rare occasion where we
+         * ignore the assigned stream and use a First Fit policy into other streams of the type.
+         * At least one of the streams must still have space, because F2FS would otherwise
+         * have had to do GC before calling f2fs_allocate_data_block.
+         */
+        *stream = 0;
+        active_streams = __get_number_active_streams_for_type(sbi, type);
+
+        while (i < active_streams){
+            curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
+            if (curseg->segno != NULL_SEGNO)
+                break;
+
+            (*stream)++;
+        }
+    }
+
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 

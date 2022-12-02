@@ -664,11 +664,7 @@ static inline unsigned int __get_next_file_stream_rr(struct f2fs_sb_info *sbi,
     do {
         stream = atomic_read(&sbi->rr_active_stream[type]);
 
-        /* first allocation for a stream 
-         *
-         * to simplify management code we mantain the same structure for DATA and
-         * NODE, eventhough we only allow a single NODE stream 
-         * */
+        /* first allocation for a stream */
         if (stream == MAX_ACTIVE_LOGS) {
             atomic_set(&sbi->rr_active_stream[type], 0);
             stream = 0;
@@ -716,7 +712,7 @@ static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info
         /* we always need to keep at least 1 non-exclusive stream for data (stream 0), therefore
          * fail exclusive stream allocation if all other streams are reserved */
         if (next_free_stream == active_streams) {
-            /* need to release lock because caller may also attempt lock */
+            /* need to release lock because call to __get_next_file_stream_rr may also attempt lock */
             spin_unlock(&sbi->resmap_lock);
 
             /* fall back to RR based file stream allocation */
