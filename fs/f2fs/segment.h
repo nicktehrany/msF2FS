@@ -573,7 +573,7 @@ static inline unsigned int __get_number_active_streams_for_type(struct f2fs_sb_i
     unsigned int streams = 0;
 
 	spin_lock(&sbi->streammap_lock);
-	streams = find_next_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS, 0);
+    streams = find_next_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS, 0);
 	spin_unlock(&sbi->streammap_lock);
 
     return streams;
@@ -638,9 +638,6 @@ unchanged:
 
     return stream;
 }
-
-// TODO: we probably don't need all the RR stride features anymore, can cleanup all
-// these functions here
 
 static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi, unsigned int type,
         unsigned int stream)
