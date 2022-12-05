@@ -3668,12 +3668,13 @@ static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi,
         } else
             stream = fi->i_data_stream;
     } else if (ptype == NODE) {
-        /* TODO: Currently no NODE streams are supported, therefore everything
+        /* NOTE: Currently no NODE streams are supported, therefore everything
          * is on stream 0. Once added, logic is same as for DATA. */
         stream = 0;
     } else if (ptype == META) {
-        /* This is for pinned files or SSR (which multi-streams does not support).
-         * If there are pinned files, it goes to the default stream 0 */
+        /* This is for pinned files or SSR (which LFS and hence multi-streams 
+         * does not support). If there are pinned files, it goes to the 
+         * default stream 0 */
         stream = 0;
     }
 
@@ -4035,9 +4036,7 @@ void f2fs_do_write_meta_page(struct f2fs_sb_info *sbi, struct page *page,
 		.type = META,
 		.temp = HOT,
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        /* TODO: currently we only use streams for DATA, hence META is pinned to stream 0.
-         * we can use multiple streams for meta but that requires versioning for e.g., inodes
-         */
+        /* Currently we only use streams for DATA, hence META is pinned to stream 0. */
         .stream = 0, 
 #endif
 		.op = REQ_OP_WRITE,
@@ -4217,7 +4216,7 @@ void f2fs_do_replace_block(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	if (segno != curseg->segno) {
 		curseg->next_segno = segno;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        /* TODO: Currently no support for block replacing */
+        /* NOTE: No support for block replacing with streams */
 		change_curseg(sbi, type, true, 0);
 #else
 		change_curseg(sbi, type, true);
@@ -4226,7 +4225,7 @@ void f2fs_do_replace_block(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 
 	curseg->next_blkoff = GET_BLKOFF_FROM_SEG0(sbi, new_blkaddr);
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        /* TODO: Currently no support for block replacing */
+        /* NOTE: No support for block replacing with streams */
     __add_sum_entry(sbi, type, sum, 0);
 #else
     __add_sum_entry(sbi, type, sum);
@@ -4255,7 +4254,7 @@ void f2fs_do_replace_block(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 		if (old_cursegno != curseg->segno) {
 			curseg->next_segno = old_cursegno;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-            /* TODO: Currently no support for block replacing */
+            /* NOTE: No support for block replacing with streams */
             change_curseg(sbi, type, true, 0);
 #else
             change_curseg(sbi, type, true);
@@ -4366,7 +4365,7 @@ static int read_compacted_summaries(struct f2fs_sb_info *sbi)
 		blk_off = le16_to_cpu(ckpt->cur_data_blkoff[i]);
 		seg_i->next_segno = segno;
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        /* TODO: summaries are currently not supported for streams, therefore
+        /* NOTE: summaries are currently not supported for streams, therefore
          * only use summaries on stream 0 (default implementation)
          */
 		reset_curseg(sbi, i, 0, 0);

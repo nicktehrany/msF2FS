@@ -1698,9 +1698,6 @@ next_alloc:
 
 		f2fs_lock_op(sbi);
 #ifdef CONFIG_F2FS_MULTI_STREAM
-        /* TODO: For now we only enable streams for DATA, avoids meta issues
-         * such as inode versioning, therefore this can only be on stream 0
-         */
 		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false, 0);
 #else
 		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false);
