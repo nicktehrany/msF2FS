@@ -313,9 +313,9 @@ static long fcntl_rw_hint(struct file *file, unsigned int cmd,
 
 static bool streammap_valid(unsigned long streammap)
 {
-    /* TODO: check if bitmap is valid (le or be and up to 16 somethings is set) */
-    return !bitmap_empty(&streammap, 16);
-    // we need to have be for f2fs
+    /* maximum of 11 streams for a single type, since there can be
+     * 16 active streams and we need at least one stream per type */
+    return !bitmap_empty(&streammap, 11);
 }
 
 
