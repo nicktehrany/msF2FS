@@ -3698,15 +3698,55 @@ static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi,
     return stream;
 }
 
+/* TODO UDPATE TO NEW POLICY */
+static unsigned int __get_stream_amfs_policy(struct f2fs_sb_info *sbi, 
+        unsigned int type, unsigned long ino)
+{
+    struct inode *inode;
+    struct f2fs_inode_info *fi;
+    unsigned int stream = 0;
+    enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
+
+    inode = f2fs_iget(sbi->sb, ino);
+	if (IS_ERR(inode)) {
+        /* Something failed - fall back to allocating on stream 0 */
+        return 0;
+	}
+
+    fi = F2FS_I(inode);
+
+    spin_lock(&fi->i_streams_lock);
+
+    if (ptype == DATA) {
+        if (fi->i_has_streammap)
+            stream = __get_stream_from_inode_streammap(sbi, type, inode);
+        else
+            stream = 0;
+    } else if (ptype == NODE) {
+        stream = 0;
+    } else if (ptype == META) {
+        stream = 0;
+    }
+
+    spin_unlock(&fi->i_streams_lock);
+
+    iput(inode);
+
+    return stream;
+}
+
+
 static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
         int type, struct f2fs_io_info *fio)
 {
     if (!fio)
         return 0;
     else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
-            return __get_stream_spf_policy(sbi, type, fio->ino);
-    else
+        return __get_stream_spf_policy(sbi, type, fio->ino);
+    else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
         return __get_stream_rr_policy(sbi, type);
+    else
+        return __get_stream_amfs_policy(sbi, type, fio->ino);
 }
 
 static void __update_file_stream(struct f2fs_sb_info *sbi,
@@ -3756,14 +3796,16 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
-    
-    if (curseg->segno == NULL_SEGNO) {
+
+	f2fs_down_read(&SM_I(sbi)->curseg_lock);
+
+    if (unlikely(curseg->segno == NULL_SEGNO)) {
         /* Stream is out of space on the device, this should be a rare occasion where we
          * ignore the assigned stream and use a First Fit policy into other streams of the type.
          * Once a stream with space is found it is the new assigned stream for the inode.
          *
          * At least one of the streams MUST still have space, because otherwise we would
-         * have had done GC before calling f2fs_allocate_data_block.
+         * have done foreground GC before calling f2fs_allocate_data_block.
          */
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
@@ -3778,8 +3820,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
             (*stream)++;
         }
     }
-
-	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
 	mutex_lock(&curseg->curseg_mutex);
 	down_write(&sit_i->sentry_lock);

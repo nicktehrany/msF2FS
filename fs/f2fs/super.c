@@ -982,6 +982,8 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SRR;
 			} else if (!strcmp(name, "spf")) {
 				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SPF;
+			} else if (!strcmp(name, "amfs")) {
+				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_AMFS;
 			} else {
 				kfree(name);
 				return -EINVAL;
