@@ -760,10 +760,15 @@ static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info
     return stream;
 }
 
-/* TODO docs 
- * do we want single block round robin allocation or or strided round robin based on the avg io size? 
- * can set a value for this in the inode (default close to MDTS?),
- * could align it to the end of the segment and then only do rr once segment is full */
+/* Gets a stream from the bitmap in the inode. If no bitmap is in the inode, returns stream 0.
+ * Otherwise set stream is returned if it is an active stream. If the stream is inactive,
+ * the application provided streammap is reset and stream 0 is returned.
+ * If multiple streams are set in the bitmap, RR between the streams and stride that fills a segment,
+ * which aims to decrease fragmentation and get close to MDTS of the used ZNS device. Therefore,
+ * once a segment in a stream is fully written RR goes to the next stream.
+ *
+ * Note, function assumes the caller is holding i_streams_lock.
+ */
 static inline unsigned int __get_stream_from_inode_streammap(struct f2fs_sb_info *sbi,
         unsigned int type, struct inode *inode)
 {
@@ -771,24 +776,17 @@ static inline unsigned int __get_stream_from_inode_streammap(struct f2fs_sb_info
     unsigned int stream = 0;
     unsigned int tested = 0;
     unsigned int segno = 0;
-    bool locked = false;
     struct f2fs_inode_info *fi = F2FS_I(inode);
     unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
 
     /* this init only happens once, the first block written of the inode */
-    if (unlikely(!fi->i_has_streammap_init)) {
-        /* f2fs_down_write(&fi->i_sem); */
+    if (unlikely(!fi->i_has_streammap_init))
         fi->i_has_streammap_init = true;
-        /* f2fs_up_write(&fi->i_sem); */
-    }
 
     /* only have a single stream, no exclusive reservation or RR allocation needed */
     if (active_streams == 1)
         goto fail_streammap;
     
-    /* inode_lock(inode); */
-    /* locked = true; */
-
 get_stream:
     /* RR restart checking streams from stream 0 */
     if (fi->i_last_stream == active_streams)
@@ -800,9 +798,7 @@ get_stream:
      * At least 1 stream bit MUST be set, otherwise fcntl would have
      * failed and not set it. Avoids this infinitely looping. */
     if (!__test_inuse_stream(sbi, type, stream)) {
-        /* f2fs_down_write(&fi->i_sem); */
         fi->i_last_stream = stream;
-        /* f2fs_up_write(&fi->i_sem); */
         tested++;
 
         /* if inode streammap only contains invalid bits identify when
@@ -834,25 +830,19 @@ get_stream:
             fi->i_last_segno = segno;
             goto got_stream;
         } else {
-            /* f2fs_down_write(&fi->i_sem); */
             fi->i_last_stream = stream + 1; 
             fi->i_last_segno = 0; /* reset i_last_segno to get new stream */
-            /* f2fs_up_write(&fi->i_sem); */
             goto get_stream;
         }
     }
 
 got_stream:
-    /* if (locked) */
-    /*     inode_unlock(inode); */
     return stream;
 
 fail_streammap:
     /* Failing resets the inode flag and prints a kernel info message */
     f2fs_info(sbi, "Failed getting valid streammap for inode %lu. Disabling streammap for inode.", inode->i_ino);
-    /* f2fs_down_write(&fi->i_sem); */
     fi->i_has_streammap = false;
-    /* f2fs_up_write(&fi->i_sem); */
     stream = 0;
 
     goto got_stream;
