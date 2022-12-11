@@ -1346,7 +1346,7 @@ static int move_data_block(struct inode *inode, block_t bidx,
         /* Need to reset the streams bitmap in the inode, if set, since data
          * can move to new type (e.g., HOT to COLD after GC) */
         spin_lock(&fi->i_streams_lock);
-        if (fi->i_has_streammap) {
+        if (inode->i_has_streammap && fi->i_has_streammap) {
             fi->i_has_streammap = false;
             dirtied = true;
         }

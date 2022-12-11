@@ -856,7 +856,7 @@ struct f2fs_inode_info {
     bool i_should_release_stream; /* indicate if file was deleted and should release stream */
     spinlock_t i_streams_lock; /* lock the streams info */
     bool i_has_streammap; /* indicate if the inode has an assigned bitmap */
-    unsigned long **i_streammap; /* assgined bitmap of streams to use for the inode */
+    bool i_has_streammap_init; /* indicate if streammap has been initialized */
     unsigned int i_last_stream; /* for rr allocation on bitmap store last allocated one */
     unsigned int i_last_segno; /* stride RR allocation on stream to be in segment, gets closer to MDTS */
 #endif

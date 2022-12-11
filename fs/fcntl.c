@@ -313,7 +313,9 @@ static long fcntl_rw_hint(struct file *file, unsigned int cmd,
 
 static bool streammap_valid(unsigned long streammap)
 {
+    /* TODO: check if bitmap is valid (le or be and up to 16 somethings is set) */
     return !bitmap_empty(&streammap, 16);
+    // we need to have be for f2fs
 }
 
 
@@ -322,7 +324,7 @@ static long fcntl_data_streammap(struct file *file, unsigned int cmd,
 {
 	struct inode *inode = file_inode(file);
 	u64 __user *argp = (u64 __user *)arg;
-    u32 streammap;
+    unsigned long streammap;
 
 	switch (cmd) {
     case F_SET_DATA_STREAM_MAP:
@@ -333,6 +335,7 @@ static long fcntl_data_streammap(struct file *file, unsigned int cmd,
 
 		inode_lock(inode);
 		inode->i_streammap = streammap;
+        inode->i_has_streammap = true;
 		inode_unlock(inode);
 		return 0;
 	default:

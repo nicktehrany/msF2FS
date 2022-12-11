@@ -3718,7 +3718,7 @@ static unsigned int __get_stream_amfs_policy(struct f2fs_sb_info *sbi,
     spin_lock(&fi->i_streams_lock);
 
     if (ptype == DATA) {
-        if (fi->i_has_streammap)
+        if (inode->i_has_streammap && (fi->i_has_streammap || !fi->i_has_streammap_init))
             stream = __get_stream_from_inode_streammap(sbi, type, inode);
         else
             stream = 0;

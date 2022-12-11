@@ -767,24 +767,42 @@ static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info
 static inline unsigned int __get_stream_from_inode_streammap(struct f2fs_sb_info *sbi,
         unsigned int type, struct inode *inode)
 {
+    struct curseg_info *curseg;
     unsigned int stream = 0;
-    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
-    struct f2fs_inode_info *fi = F2FS_I(inode);
     unsigned int tested = 0;
+    unsigned int segno = 0;
+    bool locked = false;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+
+    /* this init only happens once, the first block written of the inode */
+    if (unlikely(!fi->i_has_streammap_init)) {
+        /* f2fs_down_write(&fi->i_sem); */
+        fi->i_has_streammap_init = true;
+        /* f2fs_up_write(&fi->i_sem); */
+    }
 
     /* only have a single stream, no exclusive reservation or RR allocation needed */
     if (active_streams == 1)
         goto fail_streammap;
     
+    /* inode_lock(inode); */
+    /* locked = true; */
+
 get_stream:
-    stream = find_next_bit_le(fi->i_streammap, fi->i_last_stream);
+    /* RR restart checking streams from stream 0 */
+    if (fi->i_last_stream == active_streams)
+        fi->i_last_stream = 0;
+    stream = find_next_bit(&inode->i_streammap, active_streams, fi->i_last_stream);
 
     /* If stream is not active, application set bitmap is not valid,
      * skip this stream and check the next one.
      * At least 1 stream bit MUST be set, otherwise fcntl would have
      * failed and not set it. Avoids this infinitely looping. */
     if (!__test_inuse_stream(sbi, type, stream)) {
+        /* f2fs_down_write(&fi->i_sem); */
         fi->i_last_stream = stream;
+        /* f2fs_up_write(&fi->i_sem); */
         tested++;
 
         /* if inode streammap only contains invalid bits identify when
@@ -797,40 +815,44 @@ get_stream:
         goto get_stream;
     }
 
-	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
+    /* passed above checks, enable streammap flag */
+    fi->i_has_streammap = true;
 
-	f2fs_down_read(&SM_I(sbi)->curseg_lock);
+	curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
+    segno = curseg->segno;
 
     if (unlikely(curseg->segno == NULL_SEGNO)) {
         /* if the stream runs out of space, it means the file system
          * is mostly utilized and we ignore the application hint
          * and f2fs_allocate_data_block will find the first fit for
          * the block in a stream and assign this. Hence, we still return
-         * the bad stream and let it handle it */
-        f2fs_up_read(&SM_I(sbi)->curseg_lock);
+         * the bad stream and let caller handle it, which will repeat 
+         * this check */
         goto got_stream;
     } else {
-        if (curseg->segno == 0 || curseg->segno == fi->i_last_segno) {
-            fi->i_last_segno = curseg->segno;
+        if (fi->i_last_segno == 0 || segno == fi->i_last_segno) {
+            fi->i_last_segno = segno;
             goto got_stream;
         } else {
-            f2fs_up_read(&SM_I(sbi)->curseg_lock);
-            fi->i_last_stream = stream;
+            /* f2fs_down_write(&fi->i_sem); */
+            fi->i_last_stream = stream + 1; 
             fi->i_last_segno = 0; /* reset i_last_segno to get new stream */
+            /* f2fs_up_write(&fi->i_sem); */
             goto get_stream;
         }
     }
-	f2fs_up_read(&SM_I(sbi)->curseg_lock);
-
-    fi->i_last_stream = stream;
 
 got_stream:
+    /* if (locked) */
+    /*     inode_unlock(inode); */
     return stream;
 
 fail_streammap:
     /* Failing resets the inode flag and prints a kernel info message */
-    f2fs_info(sbi, "Failed getting streammap for inode %lu. Disabling flag.", inode->i_ino);
-    inode->i_has_streammap = false;
+    f2fs_info(sbi, "Failed getting valid streammap for inode %lu. Disabling streammap for inode.", inode->i_ino);
+    /* f2fs_down_write(&fi->i_sem); */
+    fi->i_has_streammap = false;
+    /* f2fs_up_write(&fi->i_sem); */
     stream = 0;
 
     goto got_stream;
