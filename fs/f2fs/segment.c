@@ -3638,33 +3638,22 @@ static unsigned int __get_stream_rr_policy(struct f2fs_sb_info *sbi,
 }
 
 static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi, 
-        unsigned int type, unsigned long ino)
+        unsigned int type, struct f2fs_io_info *fio)
 {
-    struct inode *inode;
-    struct f2fs_inode_info *fi;
+    struct inode *inode = fio->page->mapping->host;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
     unsigned int stream = 0;
     enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
-    bool dirtied = false;
-
-    inode = f2fs_iget(sbi->sb, ino);
-	if (IS_ERR(inode)) {
-        /* Something failed - fall back to allocating on stream 0 */
-        return 0;
-	}
-
-    fi = F2FS_I(inode);
 
     spin_lock(&fi->i_streams_lock);
 
     if (ptype == DATA) {
-        if (!fi->i_has_pinned_data_stream) {
+        if (!fi->i_has_pinned_data_stream)
             stream = __set_and_return_file_data_stream(sbi, type, inode);
-            dirtied = true;
-        } else if (!inode->i_exclusive_data_stream &&
+        else if (!inode->i_exclusive_data_stream &&
                 __test_stream_reserved(sbi, type, fi->i_data_stream)) {
             /* another file has exclusively claimed stream, need to migrate */
             stream = __set_and_return_file_data_stream(sbi, type, inode);
-            dirtied = true;
         } else
             stream = fi->i_data_stream;
     } else if (ptype == NODE) {
@@ -3683,36 +3672,21 @@ static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi,
      * the ptype. Since only DATA can have streams, technically it will only release
      * these particular streams.
      */
-    if (!inode->i_exclusive_data_stream && fi->i_has_exclusive_data_stream) {
+    if (!inode->i_exclusive_data_stream && fi->i_has_exclusive_data_stream)
         __release_exclusive_data_stream(sbi, inode);
-        dirtied = true; 
-    }
 
     spin_unlock(&fi->i_streams_lock);
-
-    if (dirtied)
-        f2fs_mark_inode_dirty_sync(inode, true);
-
-    iput(inode);
 
     return stream;
 }
 
 static unsigned int __get_stream_amfs_policy(struct f2fs_sb_info *sbi, 
-        unsigned int type, unsigned long ino)
+        unsigned int type, struct f2fs_io_info *fio)
 {
-    struct inode *inode;
-    struct f2fs_inode_info *fi;
+    struct inode *inode = fio->page->mapping->host;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
     unsigned int stream = 0;
     enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
-
-    inode = f2fs_iget(sbi->sb, ino);
-	if (IS_ERR(inode)) {
-        /* Something failed - fall back to allocating on stream 0 */
-        return 0;
-	}
-
-    fi = F2FS_I(inode);
 
     spin_lock(&fi->i_streams_lock);
 
@@ -3721,15 +3695,12 @@ static unsigned int __get_stream_amfs_policy(struct f2fs_sb_info *sbi,
             stream = __get_stream_from_inode_streammap(sbi, type, inode);
         else
             stream = 0;
-    } else if (ptype == NODE) {
+    } else if (ptype == NODE)
         stream = 0;
-    } else if (ptype == META) {
+    else if (ptype == META)
         stream = 0;
-    }
 
     spin_unlock(&fi->i_streams_lock);
-
-    iput(inode);
 
     return stream;
 }
@@ -3741,11 +3712,11 @@ static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi,
     if (!fio)
         return 0;
     else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
-        return __get_stream_spf_policy(sbi, type, fio->ino);
+        return __get_stream_spf_policy(sbi, type, fio);
     else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
         return __get_stream_rr_policy(sbi, type);
     else
-        return __get_stream_amfs_policy(sbi, type, fio->ino);
+        return __get_stream_amfs_policy(sbi, type, fio);
 }
 
 static void __update_file_stream(struct f2fs_sb_info *sbi,
