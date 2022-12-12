@@ -3698,7 +3698,6 @@ static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi,
     return stream;
 }
 
-/* TODO UDPATE TO NEW POLICY */
 static unsigned int __get_stream_amfs_policy(struct f2fs_sb_info *sbi, 
         unsigned int type, unsigned long ino)
 {
