@@ -938,7 +938,7 @@ static inline bool __has_max_active_zones(struct f2fs_sb_info *sbi, unsigned int
 
 	dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
 
-    return atomic_read(&FDEV(dev_idx).active_zones) == FDEV(dev_idx).max_active_zones;
+    return atomic_read(&FDEV(dev_idx).active_zones) >= FDEV(dev_idx).max_active_zones;
 }
 
 static inline bool __has_cursec_reached_last_seg(struct f2fs_sb_info *sbi,

@@ -3781,7 +3781,15 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
     /* Stream has finished writing, thus filled the section, or the curseg has no space and cursec is at final segment,
-     * then the Zone is full and hence on the ZNS full zone releases its resources and is no longer an active zone */
+     * then the Zone is full and hence on the ZNS full zone releases its resources and is no longer an active zone.
+     *
+     * Note, we only have buffered IO for ZNS, therefore the next block written (which is this block allocation)
+     * may be delayed in page cache and zone is not actually full, whereas we already have decremented
+     * the count. Currently there is no better way of tracing active zones here, this therefore
+     * only estimates active zones, and attempts to not exceed the limit, however no guarantees can be 
+     * made that this limit is not exceeded.
+     *
+     * */
     if (curseg->segno == NULL_SEGNO || (__has_cursec_reached_last_seg(sbi, curseg->segno)
                 && __is_curseg_full(sbi, curseg))) {
         dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, curseg->segno));
