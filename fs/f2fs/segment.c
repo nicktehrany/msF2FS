@@ -3709,28 +3709,20 @@ static unsigned int __get_stream_amfs_policy(struct f2fs_sb_info *sbi,
 static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
         int type, struct f2fs_io_info *fio)
 {
-    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
-        return __get_stream_spf_policy(sbi, type, fio);
-    else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
+    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
         return __get_stream_rr_policy(sbi, type);
+    else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
+        return __get_stream_spf_policy(sbi, type, fio);
     else
         return __get_stream_amfs_policy(sbi, type, fio);
 }
 
 static void __update_file_stream(struct f2fs_sb_info *sbi,
-        unsigned long ino, int type, unsigned int stream)
+        struct f2fs_io_info *fio, int type, unsigned int stream)
 {
-    struct inode *inode;
-    struct f2fs_inode_info *fi;
+    struct inode *inode = fio->page->mapping->host;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
     enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
-
-    inode = f2fs_iget(sbi->sb, ino);
-	if (IS_ERR(inode)) {
-        /* No inode, avoid any info updating */
-        return;
-	}
-
-    fi = F2FS_I(inode);
 
     spin_lock(&fi->i_streams_lock);
 
@@ -3743,8 +3735,6 @@ static void __update_file_stream(struct f2fs_sb_info *sbi,
     } 
 
     spin_unlock(&fi->i_streams_lock);
-
-    iput(inode);
 }
 #endif
 
@@ -3781,7 +3771,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
         while (i < active_streams){
             curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
             if (curseg->segno != NULL_SEGNO) {
-                __update_file_stream(sbi, fio->ino, type, *stream);
+                __update_file_stream(sbi, fio, type, *stream);
                 break;
             }
 
