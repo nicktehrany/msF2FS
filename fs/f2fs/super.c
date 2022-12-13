@@ -4045,6 +4045,8 @@ static int init_blkz_info(struct f2fs_sb_info *sbi, int devi)
 	rep_zone_arg.dev = &FDEV(devi);
 	rep_zone_arg.zone_cap_mismatch = false;
 
+    FDEV(devi).max_active_zones = bdev_max_active_zones(bdev);
+
 	ret = blkdev_report_zones(bdev, 0, BLK_ALL_ZONES, f2fs_report_zone_cb,
 				  &rep_zone_arg);
 	if (ret < 0)

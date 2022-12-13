@@ -507,24 +507,6 @@ static inline void seg_info_to_raw_sit(struct seg_entry *se,
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static inline unsigned int find_next_free_section(struct free_segmap_info *free_i,
-        unsigned int max)
-{
-	unsigned int secno;
-
-	spin_lock(&free_i->segmap_lock);
-	secno = find_first_zero_bit(free_i->free_secmap, max);
-	set_bit(secno, free_i->free_secmap);
-	free_i->free_sections--;
-	if (!test_and_set_bit(secno, free_i->free_secmap))
-		free_i->free_sections--;
-	spin_unlock(&free_i->segmap_lock);
-
-	return secno;
-}
-#endif
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
 static inline unsigned int __find_next_inuse_stream(struct f2fs_sb_info *sbi,
 		unsigned int max, unsigned int stream, unsigned int type)
 {
@@ -949,6 +931,50 @@ static inline unsigned long __get_reserved_stream_inode(struct f2fs_sb_info *sbi
 
     return ino;
 }
+
+static inline bool __has_max_active_zones(struct f2fs_sb_info *sbi, unsigned int segno)
+{
+	unsigned int dev_idx;
+
+	dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+
+    return atomic_read(&FDEV(dev_idx).active_zones) == FDEV(dev_idx).max_active_zones;
+}
+
+static inline bool __has_cursec_reached_last_seg(struct f2fs_sb_info *sbi,
+        unsigned int segno)
+{
+	unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
+	unsigned int start_segno = GET_SEG_FROM_SEC(sbi, secno);
+	unsigned int end_segno = start_segno + sbi->segs_per_sec;
+
+	if (__is_large_section(sbi))
+		end_segno = rounddown(end_segno, sbi->segs_per_sec);
+
+	if (f2fs_sb_has_blkzoned(sbi))
+		end_segno -= sbi->segs_per_sec -
+					f2fs_usable_segs_in_sec(sbi, segno);
+
+    /* next segment is the write end */
+    return end_segno - 1 == segno;
+}
+
+static inline bool __can_stream_alloc_new_section(struct f2fs_sb_info *sbi,
+        struct curseg_info *curseg)
+{
+    return !(__has_cursec_reached_last_seg(sbi, curseg->segno) && __has_max_active_zones(sbi, curseg->segno)); 
+}
+
+static inline bool __is_curseg_full(struct f2fs_sb_info *sbi,
+        struct curseg_info *curseg)
+{
+	unsigned int left_blocks = f2fs_usable_blks_in_seg(sbi, curseg->segno) -
+			get_seg_entry(sbi, curseg->segno)->ckpt_valid_blocks;
+
+
+    /* current allocation will go into the last block, hence check equal to 1 */
+    return left_blocks == 1; 
+}
 #endif
 
 
@@ -988,11 +1014,24 @@ static inline void __set_inuse(struct f2fs_sb_info *sbi,
 {
 	struct free_segmap_info *free_i = FREE_I(sbi);
 	unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int dev_idx;
+#endif
 
 	set_bit(segno, free_i->free_segmap);
 	free_i->free_segments--;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+
+	if (!test_and_set_bit(secno, free_i->free_secmap)) {
+		free_i->free_sections--;
+        if (f2fs_sb_has_blkzoned(sbi))
+            atomic_inc(&FDEV(dev_idx).active_zones);
+    }
+#else
 	if (!test_and_set_bit(secno, free_i->free_secmap))
 		free_i->free_sections--;
+#endif
 }
 
 static inline void __set_test_and_free(struct f2fs_sb_info *sbi,
@@ -1026,12 +1065,25 @@ static inline void __set_test_and_inuse(struct f2fs_sb_info *sbi,
 {
 	struct free_segmap_info *free_i = FREE_I(sbi);
 	unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int dev_idx;
+#endif
 
 	spin_lock(&free_i->segmap_lock);
 	if (!test_and_set_bit(segno, free_i->free_segmap)) {
 		free_i->free_segments--;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+
+		if (!test_and_set_bit(secno, free_i->free_secmap)) {
+			free_i->free_sections--;
+            if (f2fs_sb_has_blkzoned(sbi))
+                atomic_inc(&FDEV(dev_idx).active_zones);
+        }
+#else
 		if (!test_and_set_bit(secno, free_i->free_secmap))
 			free_i->free_sections--;
+#endif
 	}
 	spin_unlock(&free_i->segmap_lock);
 }

@@ -1293,6 +1293,8 @@ struct f2fs_dev_info {
 	unsigned int nr_blkz;		/* Total number of zones */
 	unsigned long *blkz_seq;	/* Bitmap indicating sequential zones */
 	block_t *zone_capacity_blocks;  /* Array of zone capacity in blks */
+    unsigned int max_active_zones;
+    atomic_t active_zones; /* Track the number of active zones */
 #endif
 };
 

@@ -1725,6 +1725,9 @@ static int __f2fs_issue_discard_zone(struct f2fs_sb_info *sbi,
 	sector_t sector, nr_sects;
 	block_t lblkstart = blkstart;
 	int devi = 0;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int ret = 0;
+#endif
 
 	if (f2fs_is_multi_device(sbi)) {
 		devi = f2fs_target_device_index(sbi, blkstart);
@@ -1748,9 +1751,19 @@ static int __f2fs_issue_discard_zone(struct f2fs_sb_info *sbi,
 				 blkstart, blklen);
 			return -EIO;
 		}
-		trace_f2fs_issue_reset_zone(bdev, blkstart);
-		return blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
-					sector, nr_sects, GFP_NOFS);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        trace_f2fs_issue_reset_zone(bdev, blkstart);
+        ret = blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
+                sector, nr_sects, GFP_NOFS);
+        atomic_dec(&FDEV(devi).active_zones);
+
+        return ret;
+#else
+        trace_f2fs_issue_reset_zone(bdev, blkstart);
+        return blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
+                sector, nr_sects, GFP_NOFS);
+#endif
+
 	}
 
 	/* For conventional zones, use regular discard if supported */
@@ -2488,6 +2501,7 @@ static void get_new_segment(struct f2fs_sb_info *sbi,
 	int i;
 #ifdef CONFIG_F2FS_MULTI_STREAM
     int j;
+	unsigned int dev_idx;
 #endif
 
 	spin_lock(&free_i->segmap_lock);
@@ -2568,6 +2582,15 @@ skip_left:
 got_it:
 	/* set it as dirty segment in free segmap */
 	f2fs_bug_on(sbi, test_bit(segno, free_i->free_segmap));
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    /* allocated a new section, meaning the prior segment must have filled
+     * the entire section, therefore the ZNS zone is full and releasing
+     * its active zone resources */
+    if (old_zoneno != zoneno) {
+        dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+        atomic_dec(&FDEV(dev_idx).active_zones);
+    }
+#endif
 	__set_inuse(sbi, segno);
 	*newseg = segno;
 	spin_unlock(&free_i->segmap_lock);
@@ -2719,7 +2742,6 @@ static void new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec,
 		dir = ALLOC_RIGHT;
 
     segno = __get_next_segno(sbi, type, stream);
-
     get_new_segment(sbi, &segno, new_sec, dir);
 	curseg->next_segno = segno;
     curseg->stream = stream;
@@ -3751,26 +3773,47 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	struct seg_entry *se = NULL;
     unsigned int active_streams;
     int i = 0;
+    unsigned int dev_idx;
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
-    if (unlikely(curseg->segno == NULL_SEGNO)) {
-        /* Stream is out of space on the device, this should be a rare occasion where we
-         * ignore the assigned stream and use a First Fit policy into other streams of the type.
-         * Once a stream with space is found it is the new assigned stream for the inode.
-         *
-         * At least one of the streams MUST still have space, because otherwise we would
-         * have done foreground GC before calling f2fs_allocate_data_block.
-         */
+    /* Stream has finished writing, thus filled the section, or the curseg has no space and cursec is at final segment,
+     * then the Zone is full and hence on the ZNS full zone releases its resources and is no longer an active zone */
+    if (curseg->segno == NULL_SEGNO || (__has_cursec_reached_last_seg(sbi, curseg->segno)
+                && __is_curseg_full(sbi, curseg))) {
+        dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, curseg->segno));
+        atomic_dec(&FDEV(dev_idx).active_zones);
+    }
+
+    /* If NULL_SEGNO stream is out of space on the device, this should be a rare occasion where we
+     * ignore the assigned stream and use a First Fit policy into other streams of the type.
+     * Once a stream with space is found it is the new assigned stream for the inode.
+     *
+     * At least one of the streams MUST still have space, because otherwise we would
+     * have done foreground GC before calling f2fs_allocate_data_block.
+     *
+     * Second scenario we test if curseg has space, and if not check if the section
+     * is full and we have reached maximum number of active zones. If so, we
+     * cannot successfully allocate a new section for the stream. Then also fall back
+     * to first fit for the file.
+     */
+    if (unlikely(curseg->segno == NULL_SEGNO || (__is_curseg_full(sbi, curseg) 
+                    && !__can_stream_alloc_new_section(sbi, curseg)))) {
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
         while (i < active_streams){
+            /* release prior curseg lock */
+            f2fs_up_read(&SM_I(sbi)->curseg_lock);
+
             curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
-            if (curseg->segno != NULL_SEGNO) {
+            f2fs_down_read(&SM_I(sbi)->curseg_lock);
+            /* One segment on a stream MUST have space */
+            if (curseg->segno != NULL_SEGNO && (__has_curseg_space(sbi, curseg) ||
+                        !__has_cursec_reached_last_seg(sbi, curseg->segno))) {
                 __update_file_stream(sbi, fio, type, *stream);
                 break;
             }
@@ -5221,7 +5264,7 @@ int build_curseg_streams(struct f2fs_sb_info *sbi)
     int i, err;
     unsigned int stream;
 
-    for (i = 0; i < NR_CURSEG_TYPE; i++) {
+    for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_NODE; i++) {
         while (__test_and_set_inuse_new_stream(sbi, i, &stream)) {
             err = __init_curseg_stream(sbi, i, stream);
             if (err)
