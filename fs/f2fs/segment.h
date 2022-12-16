@@ -934,27 +934,33 @@ static inline unsigned long __get_reserved_stream_inode(struct f2fs_sb_info *sbi
 
 struct f2fs_report_zone_state_args {
 	struct f2fs_dev_info *dev;
-    unsigned int zone;
 };
 
-static int f2fs_report_zone_state_cb(struct blk_zone *zone, unsigned int idx,
-			      void *data)
+static int check_zone_state(struct f2fs_dev_info *dev, struct blk_zone *zone, 
+        unsigned int idx)
 {
-	struct f2fs_report_zone_state_args *rz_args = data;
-
-    printk("checked zone %u", idx);
     switch (zone->cond) {
         case BLK_ZONE_COND_IMP_OPEN:
         case BLK_ZONE_COND_EXP_OPEN:
         case BLK_ZONE_COND_CLOSED:
+            set_bit(idx, dev->blkz_active);
             break;
         default:
-            printk("clear bit %u", idx);
-            clear_bit(rz_args->zone, rz_args->dev->blkz_active);
+            clear_bit(idx, dev->blkz_active);
             break;
     } 
 
     return 0;
+}
+
+static int f2fs_report_zone_state_cb(struct blk_zone *zone, unsigned int idx,
+				      void *data)
+{
+	struct f2fs_report_zone_state_args *args;
+
+	args = (struct f2fs_report_zone_state_args *)data;
+
+	return check_zone_state(args->dev, zone, idx);
 }
 
 /* Loops over the active zones in the blkz_active bitmap and identifies if these are 
@@ -970,43 +976,34 @@ static inline bool __has_max_active_zones(struct f2fs_sb_info *sbi, unsigned int
     unsigned int active_zones = 0;
     unsigned int next_zone = 0;
     struct f2fs_report_zone_state_args rep_zone_arg;
-	unsigned int log_sectors_per_block = sbi->log_blocksize - SECTOR_SHIFT;
-	block_t zone_start;
-	sector_t sector;
 
-	dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+    dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+
+    rep_zone_arg.dev = &FDEV(dev_idx);
+    ret = blkdev_report_zones(FDEV(dev_idx).bdev, 0, BLK_ALL_ZONES,
+            f2fs_report_zone_state_cb, &rep_zone_arg);
+
+    if (ret < 0)
+        return true; /* something failed - assume cannot allocate new section */
 
     spin_lock(&FDEV(dev_idx).blkz_active_lock);
     next_zone = find_first_bit(FDEV(dev_idx).blkz_active, FDEV(dev_idx).nr_blkz);
-    spin_unlock(&FDEV(dev_idx).blkz_active_lock);
 
     do {
-        zone_start = START_BLOCK(sbi, GET_SEG_FROM_SEC(sbi, next_zone));
-        dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
-        rep_zone_arg.dev = &FDEV(dev_idx);
-        rep_zone_arg.zone = next_zone;
-
-        sector = (sector_t)(zone_start - FDEV(dev_idx).start_blk) << log_sectors_per_block;
-
-        ret = blkdev_report_zones(FDEV(dev_idx).bdev, sector, 1, f2fs_report_zone_state_cb,
-                &rep_zone_arg);
-
-        if (ret < 0)
-            return true; /* something failed - assume cannot allocate new section */
-
-        spin_lock(&FDEV(dev_idx).blkz_active_lock);
         if (test_bit(next_zone, FDEV(dev_idx).blkz_active))
             active_zones++;
-        else
-            f2fs_info(sbi, "release zone %u", next_zone); // TODO remove temp
-        spin_unlock(&FDEV(dev_idx).blkz_active_lock);
 
-        next_zone = find_next_bit(FDEV(dev_idx).blkz_active, FDEV(dev_idx).nr_blkz, next_zone + 1);
+        next_zone = find_next_bit(FDEV(dev_idx).blkz_active, 
+                FDEV(dev_idx).nr_blkz, next_zone + 1);
     } while (next_zone != FDEV(dev_idx).nr_blkz);
 
-    f2fs_info(sbi, "active zones %u", active_zones);
+    spin_unlock(&FDEV(dev_idx).blkz_active_lock);
 
-    return active_zones >= FDEV(dev_idx).max_active_zones;
+    /* we need to keep 1 zone safety buffer in case COLD NODE zone has not been written
+     * and the zone is therefore not active yet. If we use up its resource with DATA streams
+     * we cannot fall back to writing somewhere else when we are out of active zones.
+     */
+    return active_zones >= FDEV(dev_idx).max_active_zones - 1;
 }
 
 static inline bool __has_cursec_reached_last_seg(struct f2fs_sb_info *sbi,
