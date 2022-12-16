@@ -1725,9 +1725,6 @@ static int __f2fs_issue_discard_zone(struct f2fs_sb_info *sbi,
 	sector_t sector, nr_sects;
 	block_t lblkstart = blkstart;
 	int devi = 0;
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    int ret = 0;
-#endif
 
 	if (f2fs_is_multi_device(sbi)) {
 		devi = f2fs_target_device_index(sbi, blkstart);
@@ -1751,19 +1748,9 @@ static int __f2fs_issue_discard_zone(struct f2fs_sb_info *sbi,
 				 blkstart, blklen);
 			return -EIO;
 		}
-#ifdef CONFIG_F2FS_MULTI_STREAM
-        trace_f2fs_issue_reset_zone(bdev, blkstart);
-        ret = blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
-                sector, nr_sects, GFP_NOFS);
-        atomic_dec(&FDEV(devi).active_zones);
-
-        return ret;
-#else
         trace_f2fs_issue_reset_zone(bdev, blkstart);
         return blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
                 sector, nr_sects, GFP_NOFS);
-#endif
-
 	}
 
 	/* For conventional zones, use regular discard if supported */
@@ -2501,7 +2488,6 @@ static void get_new_segment(struct f2fs_sb_info *sbi,
 	int i;
 #ifdef CONFIG_F2FS_MULTI_STREAM
     int j;
-	unsigned int dev_idx;
 #endif
 
 	spin_lock(&free_i->segmap_lock);
@@ -2582,15 +2568,6 @@ skip_left:
 got_it:
 	/* set it as dirty segment in free segmap */
 	f2fs_bug_on(sbi, test_bit(segno, free_i->free_segmap));
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    /* allocated a new section, meaning the prior segment must have filled
-     * the entire section, therefore the ZNS zone is full and releasing
-     * its active zone resources */
-    if (old_zoneno != zoneno) {
-        dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
-        atomic_dec(&FDEV(dev_idx).active_zones);
-    }
-#endif
 	__set_inuse(sbi, segno);
 	*newseg = segno;
 	spin_unlock(&free_i->segmap_lock);
@@ -3738,26 +3715,6 @@ static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi,
     else
         return __get_stream_amfs_policy(sbi, type, fio);
 }
-
-static void __update_file_stream(struct f2fs_sb_info *sbi,
-        struct f2fs_io_info *fio, int type, unsigned int stream)
-{
-    struct inode *inode = fio->page->mapping->host;
-    struct f2fs_inode_info *fi = F2FS_I(inode);
-    enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
-
-    spin_lock(&fi->i_streams_lock);
-
-    /* Currently no NODE streams are supported, therefore everything
-     * is on stream 0, and we only need to set DATA stream info. */
-    if (ptype == DATA) {
-        fi->i_data_stream = stream;
-        fi->i_has_pinned_data_stream = true;
-        f2fs_mark_inode_dirty_sync(inode, true);
-    } 
-
-    spin_unlock(&fi->i_streams_lock);
-}
 #endif
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
@@ -3773,32 +3730,14 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	struct seg_entry *se = NULL;
     unsigned int active_streams;
     int i = 0;
-    unsigned int dev_idx;
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
-    /* Stream has finished writing, thus filled the section, or the curseg has no space and cursec is at final segment,
-     * then the Zone is full and hence on the ZNS full zone releases its resources and is no longer an active zone.
-     *
-     * Note, we only have buffered IO for ZNS, therefore the next block written (which is this block allocation)
-     * may be delayed in page cache and zone is not actually full, whereas we already have decremented
-     * the count. Currently there is no better way of tracing active zones here, this therefore
-     * only estimates active zones, and attempts to not exceed the limit, however no guarantees can be 
-     * made that this limit is not exceeded.
-     *
-     * */
-    if (curseg->segno == NULL_SEGNO || (__has_cursec_reached_last_seg(sbi, curseg->segno)
-                && __is_curseg_full(sbi, curseg))) {
-        dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, curseg->segno));
-        atomic_dec(&FDEV(dev_idx).active_zones);
-    }
-
     /* If NULL_SEGNO stream is out of space on the device, this should be a rare occasion where we
      * ignore the assigned stream and use a First Fit policy into other streams of the type.
-     * Once a stream with space is found it is the new assigned stream for the inode.
      *
      * At least one of the streams MUST still have space, because otherwise we would
      * have done foreground GC before calling f2fs_allocate_data_block.
@@ -3813,18 +3752,18 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
-        while (i < active_streams){
+        while (i < active_streams) {
             /* release prior curseg lock */
             f2fs_up_read(&SM_I(sbi)->curseg_lock);
 
             curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
             f2fs_down_read(&SM_I(sbi)->curseg_lock);
-            /* One segment on a stream MUST have space */
-            if (curseg->segno != NULL_SEGNO && (__has_curseg_space(sbi, curseg) ||
-                        !__has_cursec_reached_last_seg(sbi, curseg->segno))) {
-                __update_file_stream(sbi, fio, type, *stream);
+
+            /* found a stream with space in the curseg and/or remaining space in the
+             * section to allocate a new curseg */
+            if (curseg->segno != NULL_SEGNO && (__has_curseg_space(sbi, curseg) 
+                        || !__has_cursec_reached_last_seg(sbi, curseg->segno)))
                 break;
-            }
 
             (*stream)++;
         }

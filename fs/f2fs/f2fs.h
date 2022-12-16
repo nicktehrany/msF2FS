@@ -1294,7 +1294,8 @@ struct f2fs_dev_info {
 	unsigned long *blkz_seq;	/* Bitmap indicating sequential zones */
 	block_t *zone_capacity_blocks;  /* Array of zone capacity in blks */
     unsigned int max_active_zones;
-    atomic_t active_zones; /* Track the number of active zones */
+	unsigned long *blkz_active;	/* Bitmap indicating active zones */
+	spinlock_t blkz_active_lock; /* for blkz_active bitmap lock */
 #endif
 };
 
