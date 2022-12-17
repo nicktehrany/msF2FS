@@ -1036,6 +1036,40 @@ static inline bool __is_curseg_full(struct f2fs_sb_info *sbi,
     /* current allocation will go into the last block, hence check equal to 1 */
     return left_blocks == 1; 
 }
+
+
+static inline bool __can_allocate_new_section(struct f2fs_sb_info *sbi,
+        struct curseg_info *curseg, unsigned int type, 
+        unsigned int stream)
+{
+    if (unlikely(sbi->busy_stream[stream * NR_CURSEG_TYPE + type])) {
+        if (__has_max_active_zones(sbi, curseg->segno))
+            return false;
+        else {
+            /* an active zone has become available */
+            sbi->busy_stream[stream * NR_CURSEG_TYPE + type] = false;
+            goto skip_check;
+        }
+    }
+
+    if (likely(!__is_curseg_full(sbi, curseg)))
+        goto skip_check;
+    else {
+        if (likely(!__has_cursec_reached_last_seg(sbi, curseg->segno)))
+            goto skip_check;
+
+        /* curseg is allocating the last block in the current section, hence the next allocation
+         * will have to check if an active zone is available to allocate it.
+         *
+         * Note, this will still return true for the last allocation in the block, but sets a flag
+         * to check for active zones on the next allocation. 
+         */
+        sbi->busy_stream[stream * NR_CURSEG_TYPE + type] = true;
+    }
+
+skip_check:
+    return true;
+}
 #endif
 
 

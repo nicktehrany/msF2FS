@@ -3746,9 +3746,8 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
      * cannot successfully allocate a new section for the stream. Then also fall back
      * to first fit for the file.
      */
-    if (unlikely(curseg->segno == NULL_SEGNO || (__is_curseg_full(sbi, curseg) 
-                    && __has_cursec_reached_last_seg(sbi, curseg->segno) 
-                    && __has_max_active_zones(sbi, curseg->segno)))) {
+    if (unlikely(curseg->segno == NULL_SEGNO || 
+                !__can_allocate_new_section(sbi, curseg, type, *stream))) {
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
