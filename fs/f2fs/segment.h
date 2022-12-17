@@ -1002,10 +1002,8 @@ static inline bool __has_max_active_zones(struct f2fs_sb_info *sbi, unsigned int
     /* we need to keep 3 zones as safety buffer in case NODE zone has not been written
      * and the zone is therefore not active yet. If we use up its resource with DATA streams
      * we cannot fall back to writing somewhere else when we are out of active zones.
-     *
-     * This furthermore helps avoid active zones exceeding.
      */
-    return active_zones >= FDEV(dev_idx).max_active_zones - RESERVED_BACKUP_ZONES;
+    return active_zones > FDEV(dev_idx).max_active_zones - RESERVED_BACKUP_ZONES;
 }
 
 static inline bool __has_cursec_reached_last_seg(struct f2fs_sb_info *sbi,
