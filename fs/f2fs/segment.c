@@ -3729,7 +3729,6 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
     unsigned int active_streams;
-    int i = 0;
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
@@ -3748,11 +3747,12 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
      * to first fit for the file.
      */
     if (unlikely(curseg->segno == NULL_SEGNO || (__is_curseg_full(sbi, curseg) 
-                    && !__can_stream_alloc_new_section(sbi, curseg)))) {
+                    && __has_cursec_reached_last_seg(sbi, curseg->segno) 
+                    && __has_max_active_zones(sbi, curseg->segno)))) {
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
-        while (i < active_streams) {
+        while (*stream < active_streams) {
             /* release prior curseg lock */
             f2fs_up_read(&SM_I(sbi)->curseg_lock);
 

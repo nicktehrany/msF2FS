@@ -1026,12 +1026,6 @@ static inline bool __has_cursec_reached_last_seg(struct f2fs_sb_info *sbi,
     return end_segno - 1 == segno;
 }
 
-static inline bool __can_stream_alloc_new_section(struct f2fs_sb_info *sbi,
-        struct curseg_info *curseg)
-{
-    return !(__has_cursec_reached_last_seg(sbi, curseg->segno) && __has_max_active_zones(sbi, curseg->segno)); 
-}
-
 static inline bool __is_curseg_full(struct f2fs_sb_info *sbi,
         struct curseg_info *curseg)
 {
@@ -1081,24 +1075,11 @@ static inline void __set_inuse(struct f2fs_sb_info *sbi,
 {
 	struct free_segmap_info *free_i = FREE_I(sbi);
 	unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned int dev_idx;
-#endif
 
 	set_bit(segno, free_i->free_segmap);
 	free_i->free_segments--;
-#ifdef CONFIG_F2FS_MULTI_STREAM
-	dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
-
-	if (!test_and_set_bit(secno, free_i->free_secmap)) {
-		free_i->free_sections--;
-        if (f2fs_sb_has_blkzoned(sbi))
-            set_bit(secno, FDEV(dev_idx).blkz_active);
-    }
-#else
 	if (!test_and_set_bit(secno, free_i->free_secmap))
 		free_i->free_sections--;
-#endif
 }
 
 static inline void __set_test_and_free(struct f2fs_sb_info *sbi,
@@ -1132,25 +1113,12 @@ static inline void __set_test_and_inuse(struct f2fs_sb_info *sbi,
 {
 	struct free_segmap_info *free_i = FREE_I(sbi);
 	unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    unsigned int dev_idx;
-#endif
 
 	spin_lock(&free_i->segmap_lock);
 	if (!test_and_set_bit(segno, free_i->free_segmap)) {
 		free_i->free_segments--;
-#ifdef CONFIG_F2FS_MULTI_STREAM
-        dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
-
-		if (!test_and_set_bit(secno, free_i->free_secmap)) {
-			free_i->free_sections--;
-            if (f2fs_sb_has_blkzoned(sbi))
-                set_bit(secno, FDEV(dev_idx).blkz_active);
-        }
-#else
 		if (!test_and_set_bit(secno, free_i->free_secmap))
 			free_i->free_sections--;
-#endif
 	}
 	spin_unlock(&free_i->segmap_lock);
 }
