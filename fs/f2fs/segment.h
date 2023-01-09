@@ -507,24 +507,6 @@ static inline void seg_info_to_raw_sit(struct seg_entry *se,
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static inline unsigned int find_next_free_section(struct free_segmap_info *free_i,
-        unsigned int max)
-{
-	unsigned int secno;
-
-	spin_lock(&free_i->segmap_lock);
-	secno = find_first_zero_bit(free_i->free_secmap, max);
-	set_bit(secno, free_i->free_secmap);
-	free_i->free_sections--;
-	if (!test_and_set_bit(secno, free_i->free_secmap))
-		free_i->free_sections--;
-	spin_unlock(&free_i->segmap_lock);
-
-	return secno;
-}
-#endif
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
 static inline unsigned int __find_next_inuse_stream(struct f2fs_sb_info *sbi,
 		unsigned int max, unsigned int stream, unsigned int type)
 {
@@ -948,6 +930,143 @@ static inline unsigned long __get_reserved_stream_inode(struct f2fs_sb_info *sbi
 	spin_unlock(&sbi->resmap_lock);
 
     return ino;
+}
+
+struct f2fs_report_zone_state_args {
+	struct f2fs_dev_info *dev;
+};
+
+static int check_zone_state(struct f2fs_dev_info *dev, struct blk_zone *zone, 
+        unsigned int idx)
+{
+    switch (zone->cond) {
+        case BLK_ZONE_COND_IMP_OPEN:
+        case BLK_ZONE_COND_EXP_OPEN:
+        case BLK_ZONE_COND_CLOSED:
+            set_bit(idx, dev->blkz_active);
+            break;
+        default:
+            clear_bit(idx, dev->blkz_active);
+            break;
+    } 
+
+    return 0;
+}
+
+static int f2fs_report_zone_state_cb(struct blk_zone *zone, unsigned int idx,
+				      void *data)
+{
+	struct f2fs_report_zone_state_args *args;
+
+	args = (struct f2fs_report_zone_state_args *)data;
+
+	return check_zone_state(args->dev, zone, idx);
+}
+
+/* Loops over the active zones in the blkz_active bitmap and identifies if these are 
+ * still active on the device, if not the callback function resets that bit.
+ *
+ * Function returns bool identifying if maximum number of active zones are being used. 
+ *
+ */
+static inline bool __has_max_active_zones(struct f2fs_sb_info *sbi, unsigned int segno)
+{
+    int ret;
+	unsigned int dev_idx;
+    unsigned int active_zones = 0;
+    unsigned int next_zone = 0;
+    struct f2fs_report_zone_state_args rep_zone_arg;
+
+    dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+
+    rep_zone_arg.dev = &FDEV(dev_idx);
+    ret = blkdev_report_zones(FDEV(dev_idx).bdev, 0, BLK_ALL_ZONES,
+            f2fs_report_zone_state_cb, &rep_zone_arg);
+
+    if (ret < 0)
+        return true; /* something failed - assume cannot allocate new section */
+
+    spin_lock(&FDEV(dev_idx).blkz_active_lock);
+    next_zone = find_first_bit(FDEV(dev_idx).blkz_active, FDEV(dev_idx).nr_blkz);
+
+    do {
+        if (test_bit(next_zone, FDEV(dev_idx).blkz_active))
+            active_zones++;
+
+        next_zone = find_next_bit(FDEV(dev_idx).blkz_active, 
+                FDEV(dev_idx).nr_blkz, next_zone + 1);
+    } while (next_zone != FDEV(dev_idx).nr_blkz);
+
+    spin_unlock(&FDEV(dev_idx).blkz_active_lock);
+
+    /* we need to keep 3 zones as safety buffer in case NODE zone has not been written
+     * and the zone is therefore not active yet. If we use up its resource with DATA streams
+     * we cannot fall back to writing somewhere else when we are out of active zones.
+     */
+    return active_zones > FDEV(dev_idx).max_active_zones - RESERVED_BACKUP_ZONES;
+}
+
+static inline bool __has_cursec_reached_last_seg(struct f2fs_sb_info *sbi,
+        unsigned int segno)
+{
+	unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
+	unsigned int start_segno = GET_SEG_FROM_SEC(sbi, secno);
+	unsigned int end_segno = start_segno + sbi->segs_per_sec;
+
+	if (__is_large_section(sbi))
+		end_segno = rounddown(end_segno, sbi->segs_per_sec);
+
+	if (f2fs_sb_has_blkzoned(sbi))
+		end_segno -= sbi->segs_per_sec -
+					f2fs_usable_segs_in_sec(sbi, segno);
+
+    /* next segment is the write end */
+    return end_segno - 1 == segno;
+}
+
+static inline bool __is_curseg_full(struct f2fs_sb_info *sbi,
+        struct curseg_info *curseg)
+{
+	unsigned int left_blocks = f2fs_usable_blks_in_seg(sbi, curseg->segno) -
+			get_seg_entry(sbi, curseg->segno)->ckpt_valid_blocks;
+
+
+    /* current allocation will go into the last block, hence check equal to 1 */
+    return left_blocks == 1; 
+}
+
+
+static inline bool __can_allocate_new_section(struct f2fs_sb_info *sbi,
+        struct curseg_info *curseg, unsigned int type, 
+        unsigned int stream)
+{
+    if (unlikely(sbi->busy_stream[stream * NR_CURSEG_TYPE + type])) {
+        if (__has_max_active_zones(sbi, curseg->segno))
+            return false;
+        else {
+            /* an active zone has become available */
+            sbi->busy_stream[stream * NR_CURSEG_TYPE + type] = false;
+            goto skip_check;
+        }
+    }
+
+    if (likely(!__is_curseg_full(sbi, curseg)))
+        goto skip_check;
+    else {
+        if (likely(!__has_cursec_reached_last_seg(sbi, curseg->segno)))
+            goto skip_check;
+
+        /* curseg is allocating the last block in the current section, hence the next allocation
+         * will have to check if an active zone is available to allocate it.
+         *
+         * Note, this will still return true for the last allocation in the block, but sets a flag
+         * to check for active zones on the next allocation. 
+         */
+        sbi->busy_stream[stream * NR_CURSEG_TYPE + type] = true;
+    }
+
+skip_check:
+    return true;
 }
 #endif
 

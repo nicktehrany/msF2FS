@@ -1293,6 +1293,9 @@ struct f2fs_dev_info {
 	unsigned int nr_blkz;		/* Total number of zones */
 	unsigned long *blkz_seq;	/* Bitmap indicating sequential zones */
 	block_t *zone_capacity_blocks;  /* Array of zone capacity in blks */
+    unsigned int max_active_zones;
+	unsigned long *blkz_active;	/* Bitmap indicating active zones */
+	spinlock_t blkz_active_lock; /* for blkz_active bitmap lock */
 #endif
 };
 
@@ -1907,6 +1910,8 @@ struct f2fs_sb_info {
     atomic_t rr_stride_ctr[NR_CURSEG_TYPE];
     spinlock_t resmap_lock;
     unsigned long **resmap; /* bitmap per TYPE to maintain reserved exclusive streams for files */
+    bool busy_stream[NR_CURSEG_TYPE * MAX_ACTIVE_LOGS]; /* flag to indicate if a stream cannot allocate a new section,
+                                                           must wait for an active zone to be released to allocate a new one */
 #endif
 };
 

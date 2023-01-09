@@ -1748,9 +1748,9 @@ static int __f2fs_issue_discard_zone(struct f2fs_sb_info *sbi,
 				 blkstart, blklen);
 			return -EIO;
 		}
-		trace_f2fs_issue_reset_zone(bdev, blkstart);
-		return blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
-					sector, nr_sects, GFP_NOFS);
+        trace_f2fs_issue_reset_zone(bdev, blkstart);
+        return blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
+                sector, nr_sects, GFP_NOFS);
 	}
 
 	/* For conventional zones, use regular discard if supported */
@@ -2719,7 +2719,6 @@ static void new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec,
 		dir = ALLOC_RIGHT;
 
     segno = __get_next_segno(sbi, type, stream);
-
     get_new_segment(sbi, &segno, new_sec, dir);
 	curseg->next_segno = segno;
     curseg->stream = stream;
@@ -3716,26 +3715,6 @@ static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi,
     else
         return __get_stream_amfs_policy(sbi, type, fio);
 }
-
-static void __update_file_stream(struct f2fs_sb_info *sbi,
-        struct f2fs_io_info *fio, int type, unsigned int stream)
-{
-    struct inode *inode = fio->page->mapping->host;
-    struct f2fs_inode_info *fi = F2FS_I(inode);
-    enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
-
-    spin_lock(&fi->i_streams_lock);
-
-    /* Currently no NODE streams are supported, therefore everything
-     * is on stream 0, and we only need to set DATA stream info. */
-    if (ptype == DATA) {
-        fi->i_data_stream = stream;
-        fi->i_has_pinned_data_stream = true;
-        f2fs_mark_inode_dirty_sync(inode, true);
-    } 
-
-    spin_unlock(&fi->i_streams_lock);
-}
 #endif
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
@@ -3750,34 +3729,40 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
     unsigned int active_streams;
-    int i = 0;
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
 
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
-    if (unlikely(curseg->segno == NULL_SEGNO)) {
-        /* Stream is out of space on the device, this should be a rare occasion where we
-         * ignore the assigned stream and use a First Fit policy into other streams of the type.
-         * Once a stream with space is found it is the new assigned stream for the inode.
-         *
-         * At least one of the streams MUST still have space, because otherwise we would
-         * have done foreground GC before calling f2fs_allocate_data_block.
-         */
+    /* If NULL_SEGNO stream is out of space on the device, this should be a rare occasion where we
+     * ignore the assigned stream and use a First Fit policy into other streams of the type.
+     *
+     * At least one of the streams MUST still have space, because otherwise we would
+     * have done foreground GC before calling f2fs_allocate_data_block.
+     *
+     * Second scenario we test if curseg has space, and if not check if the section
+     * is full and we have reached maximum number of active zones. If so, we
+     * cannot successfully allocate a new section for the stream. Then also fall back
+     * to first fit for the file.
+     */
+    if (unlikely(curseg->segno == NULL_SEGNO || 
+                !__can_allocate_new_section(sbi, curseg, type, *stream))) {
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
-        while (i < active_streams){
+        while (*stream < active_streams) {
             /* release prior curseg lock */
             f2fs_up_read(&SM_I(sbi)->curseg_lock);
 
             curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
             f2fs_down_read(&SM_I(sbi)->curseg_lock);
-            if (curseg->segno != NULL_SEGNO) {
-                __update_file_stream(sbi, fio, type, *stream);
+
+            /* found a stream with space in the curseg and/or remaining space in the
+             * section to allocate a new curseg */
+            if (curseg->segno != NULL_SEGNO && (__has_curseg_space(sbi, curseg) 
+                        || !__has_cursec_reached_last_seg(sbi, curseg->segno)))
                 break;
-            }
 
             (*stream)++;
         }
@@ -5225,7 +5210,7 @@ int build_curseg_streams(struct f2fs_sb_info *sbi)
     int i, err;
     unsigned int stream;
 
-    for (i = 0; i < NR_CURSEG_TYPE; i++) {
+    for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_NODE; i++) {
         while (__test_and_set_inuse_new_stream(sbi, i, &stream)) {
             err = __init_curseg_stream(sbi, i, stream);
             if (err)
