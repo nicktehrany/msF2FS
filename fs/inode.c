@@ -230,8 +230,10 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 	inode->i_flctx = NULL;
 	this_cpu_inc(nr_inodes);
     inode->i_exclusive_data_stream = false;
+    inode->i_has_streammap = false;
+    inode->i_streammap = 0;
 
-	return 0;
+    return 0;
 out:
 	return -ENOMEM;
 }
