@@ -809,11 +809,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_hot_data_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
-            {
-                f2fs_info(sbi, "Invalid hot data streams: %u must be at least 1 up to 11", arg);
-                return -EINVAL;
-            }
+            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
+            /* { */
+            /*     f2fs_info(sbi, "Invalid hot data streams: %u must be at least 1 up to 11", arg); */
+            /*     return -EINVAL; */
+            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -833,11 +833,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_warm_data_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
-            {
-                f2fs_info(sbi, "Invalid warm data streams: %u must be at least 1 up to 11", arg);
-                return -EINVAL;
-            }
+            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
+            /* { */
+            /*     f2fs_info(sbi, "Invalid warm data streams: %u must be at least 1 up to 11", arg); */
+            /*     return -EINVAL; */
+            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -857,11 +857,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_cold_data_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
-            {
-                f2fs_info(sbi, "Invalid cold data streams: %u must be at least 1 up to 11", arg);
-                return -EINVAL;
-            }
+            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
+            /* { */
+            /*     f2fs_info(sbi, "Invalid cold data streams: %u must be at least 1 up to 11", arg); */
+            /*     return -EINVAL; */
+            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -887,11 +887,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 f2fs_info(sbi, "Invalid hot node streams %u Currently maximum 1 is supported", arg);
                 return -EINVAL;
             }
-            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
-            {
-                f2fs_info(sbi, "Invalid hot node streams: %u must be at least 1 up to 11", arg);
-                return -EINVAL;
-            }
+            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
+            /* { */
+            /*     f2fs_info(sbi, "Invalid hot node streams: %u must be at least 1 up to 11", arg); */
+            /*     return -EINVAL; */
+            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -917,11 +917,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 f2fs_info(sbi, "Invalid hot warm streams %u Currently maximum 1 is supported", arg);
                 return -EINVAL;
             }
-            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
-            {
-                f2fs_info(sbi, "Invalid warm node streams: %u must be at least 1 up to 11", arg);
-                return -EINVAL;
-            }
+            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
+            /* { */
+            /*     f2fs_info(sbi, "Invalid warm node streams: %u must be at least 1 up to 11", arg); */
+            /*     return -EINVAL; */
+            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -947,11 +947,11 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 f2fs_info(sbi, "Invalid cold warm streams %u Currently maximum 1 is supported", arg);
                 return -EINVAL;
             }
-            if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1)
-            {
-                f2fs_info(sbi, "Invalid cold node streams: %u must be at least 1 up to 11", arg);
-                return -EINVAL;
-            }
+            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
+            /* { */
+            /*     f2fs_info(sbi, "Invalid cold node streams: %u must be at least 1 up to 11", arg); */
+            /*     return -EINVAL; */
+            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -4065,16 +4065,16 @@ static int init_blkz_info(struct f2fs_sb_info *sbi, int devi)
 
     FDEV(devi).max_active_zones = bdev_max_active_zones(bdev);
 
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    /* Note, only support single device for now */
-    if (sbi->nr_max_streams > FDEV(devi).max_active_zones - RESERVED_BACKUP_ZONES) {
-        f2fs_err(sbi, "Too many streams specific. Streams specific %u"
-                " but active zones supported %u and %u zones reserved as backup.", 
-                sbi->nr_max_streams, FDEV(devi).max_active_zones, 
-                RESERVED_BACKUP_ZONES);
-        return -EINVAL;
-    }
-#endif
+/* #ifdef CONFIG_F2FS_MULTI_STREAM */
+/*     /1* Note, only support single device for now *1/ */
+/*     if (sbi->nr_max_streams > FDEV(devi).max_active_zones - RESERVED_BACKUP_ZONES) { */
+/*         f2fs_err(sbi, "Too many streams specific. Streams specific %u" */
+/*                 " but active zones supported %u and %u zones reserved as backup.", */ 
+/*                 sbi->nr_max_streams, FDEV(devi).max_active_zones, */ 
+/*                 RESERVED_BACKUP_ZONES); */
+/*         return -EINVAL; */
+/*     } */
+/* #endif */
 
 	spin_lock_init(&FDEV(devi).blkz_active_lock);
 
