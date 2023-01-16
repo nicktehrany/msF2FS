@@ -729,7 +729,7 @@ static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
 			f2fs_up_read(&io->io_rwsem);
 		}
 		if (ret)
-			__f2fs_submit_merged_write(sbi, type, temp, stream);
+			__f2fs_submit_merged_write(sbi, type, temp);
 
 		/* TODO: use HOT temp only for meta pages now. */
 		if (type >= META)
