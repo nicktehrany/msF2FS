@@ -95,8 +95,7 @@ size_t syscall_arg__scnprintf_fcntl_arg(char *bf, size_t size, struct syscall_ar
 	    cmd == F_GETOWN_EX || cmd == F_SETOWN_EX ||
 	    cmd == F_GET_RW_HINT || cmd == F_SET_RW_HINT ||
 	    cmd == F_GET_FILE_RW_HINT || cmd == F_SET_FILE_RW_HINT ||
-        cmd == F_SET_EXCLUSIVE_DATA_STREAM || cmd == F_UNSET_EXCLUSIVE_DATA_STREAM ||
-        cmd == F_SET_DATA_STREAM_MAP)
+        cmd == F_SET_EXCLUSIVE_DATA_STREAM || cmd == F_UNSET_EXCLUSIVE_DATA_STREAM)
 		return syscall_arg__scnprintf_hex(bf, size, arg);
 
 	return syscall_arg__scnprintf_long(bf, size, arg);

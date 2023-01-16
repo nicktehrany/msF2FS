@@ -1748,9 +1748,9 @@ static int __f2fs_issue_discard_zone(struct f2fs_sb_info *sbi,
 				 blkstart, blklen);
 			return -EIO;
 		}
-        trace_f2fs_issue_reset_zone(bdev, blkstart);
-        return blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
-                sector, nr_sects, GFP_NOFS);
+		trace_f2fs_issue_reset_zone(bdev, blkstart);
+		return blkdev_zone_mgmt(bdev, REQ_OP_ZONE_RESET,
+					sector, nr_sects, GFP_NOFS);
 	}
 
 	/* For conventional zones, use regular discard if supported */
@@ -2719,6 +2719,7 @@ static void new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec,
 		dir = ALLOC_RIGHT;
 
     segno = __get_next_segno(sbi, type, stream);
+
     get_new_segment(sbi, &segno, new_sec, dir);
 	curseg->next_segno = segno;
     curseg->stream = stream;
@@ -3637,22 +3638,33 @@ static unsigned int __get_stream_rr_policy(struct f2fs_sb_info *sbi,
 }
 
 static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi, 
-        unsigned int type, struct f2fs_io_info *fio)
+        unsigned int type, unsigned long ino)
 {
-    struct inode *inode = fio->page->mapping->host;
-    struct f2fs_inode_info *fi = F2FS_I(inode);
+    struct inode *inode;
+    struct f2fs_inode_info *fi;
     unsigned int stream = 0;
     enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
+    bool dirtied = false;
+
+    inode = f2fs_iget(sbi->sb, ino);
+	if (IS_ERR(inode)) {
+        /* Something failed - fall back to allocating on stream 0 */
+        return 0;
+	}
+
+    fi = F2FS_I(inode);
 
     spin_lock(&fi->i_streams_lock);
 
     if (ptype == DATA) {
-        if (!fi->i_has_pinned_data_stream)
+        if (!fi->i_has_pinned_data_stream) {
             stream = __set_and_return_file_data_stream(sbi, type, inode);
-        else if (!inode->i_exclusive_data_stream &&
+            dirtied = true;
+        } else if (!inode->i_exclusive_data_stream &&
                 __test_stream_reserved(sbi, type, fi->i_data_stream)) {
             /* another file has exclusively claimed stream, need to migrate */
             stream = __set_and_return_file_data_stream(sbi, type, inode);
+            dirtied = true;
         } else
             stream = fi->i_data_stream;
     } else if (ptype == NODE) {
@@ -3671,49 +3683,60 @@ static unsigned int __get_stream_spf_policy(struct f2fs_sb_info *sbi,
      * the ptype. Since only DATA can have streams, technically it will only release
      * these particular streams.
      */
-    if (!inode->i_exclusive_data_stream && fi->i_has_exclusive_data_stream)
+    if (!inode->i_exclusive_data_stream && fi->i_has_exclusive_data_stream) {
         __release_exclusive_data_stream(sbi, inode);
+        dirtied = true; 
+    }
 
     spin_unlock(&fi->i_streams_lock);
 
-    return stream;
-}
+    if (dirtied)
+        f2fs_mark_inode_dirty_sync(inode, true);
 
-static unsigned int __get_stream_amfs_policy(struct f2fs_sb_info *sbi, 
-        unsigned int type, struct f2fs_io_info *fio)
-{
-    struct inode *inode = fio->page->mapping->host;
-    struct f2fs_inode_info *fi = F2FS_I(inode);
-    unsigned int stream = 0;
-    enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
-
-    spin_lock(&fi->i_streams_lock);
-
-    if (ptype == DATA) {
-        if (inode->i_has_streammap && (fi->i_has_streammap || !fi->i_has_streammap_init))
-            stream = __get_stream_from_inode_streammap(sbi, type, inode);
-        else
-            stream = 0;
-    } else if (ptype == NODE)
-        stream = 0;
-    else if (ptype == META)
-        stream = 0;
-
-    spin_unlock(&fi->i_streams_lock);
+    iput(inode);
 
     return stream;
 }
-
 
 static unsigned int f2fs_get_curseg_stream(struct f2fs_sb_info *sbi, 
         int type, struct f2fs_io_info *fio)
 {
-    if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
-        return __get_stream_rr_policy(sbi, type);
+    if (!fio)
+        return 0;
     else if (F2FS_OPTION(sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
-        return __get_stream_spf_policy(sbi, type, fio);
+            return __get_stream_spf_policy(sbi, type, fio->ino);
     else
-        return __get_stream_amfs_policy(sbi, type, fio);
+        return __get_stream_rr_policy(sbi, type);
+}
+
+static void __update_file_stream(struct f2fs_sb_info *sbi,
+        unsigned long ino, int type, unsigned int stream)
+{
+    struct inode *inode;
+    struct f2fs_inode_info *fi;
+    enum page_type ptype = PAGE_TYPE_OF_TEMP_TYPE(type);
+
+    inode = f2fs_iget(sbi->sb, ino);
+	if (IS_ERR(inode)) {
+        /* No inode, avoid any info updating */
+        return;
+	}
+
+    fi = F2FS_I(inode);
+
+    spin_lock(&fi->i_streams_lock);
+
+    /* Currently no NODE streams are supported, therefore everything
+     * is on stream 0, and we only need to set DATA stream info. */
+    if (ptype == DATA) {
+        fi->i_data_stream = stream;
+        fi->i_has_pinned_data_stream = true;
+        f2fs_mark_inode_dirty_sync(inode, true);
+    } 
+
+    spin_unlock(&fi->i_streams_lock);
+
+    iput(inode);
 }
 #endif
 
@@ -3729,44 +3752,34 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
     unsigned int active_streams;
+    int i = 0;
 
     *stream = f2fs_get_curseg_stream(sbi, type, fio);
 	curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
-
-	f2fs_down_read(&SM_I(sbi)->curseg_lock);
-
-    /* If NULL_SEGNO stream is out of space on the device, this should be a rare occasion where we
-     * ignore the assigned stream and use a First Fit policy into other streams of the type.
-     *
-     * At least one of the streams MUST still have space, because otherwise we would
-     * have done foreground GC before calling f2fs_allocate_data_block.
-     *
-     * Second scenario we test if curseg has space, and if not check if the section
-     * is full and we have reached maximum number of active zones. If so, we
-     * cannot successfully allocate a new section for the stream. Then also fall back
-     * to first fit for the file.
-     */
-    if (unlikely(curseg->segno == NULL_SEGNO || 
-                !__can_allocate_new_section(sbi, curseg, type, *stream))) {
+    
+    if (curseg->segno == NULL_SEGNO) {
+        /* Stream is out of space on the device, this should be a rare occasion where we
+         * ignore the assigned stream and use a First Fit policy into other streams of the type.
+         * Once a stream with space is found it is the new assigned stream for the inode.
+         *
+         * At least one of the streams MUST still have space, because otherwise we would
+         * have had done GC before calling f2fs_allocate_data_block.
+         */
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
-        while (*stream < active_streams) {
-            /* release prior curseg lock */
-            f2fs_up_read(&SM_I(sbi)->curseg_lock);
-
+        while (i < active_streams){
             curseg = CURSEG_I(sbi, *stream * NR_CURSEG_TYPE + type);
-            f2fs_down_read(&SM_I(sbi)->curseg_lock);
-
-            /* found a stream with space in the curseg and/or remaining space in the
-             * section to allocate a new curseg */
-            if (curseg->segno != NULL_SEGNO && (__has_curseg_space(sbi, curseg) 
-                        || !__has_cursec_reached_last_seg(sbi, curseg->segno)))
+            if (curseg->segno != NULL_SEGNO) {
+                __update_file_stream(sbi, fio->ino, type, *stream);
                 break;
+            }
 
             (*stream)++;
         }
     }
+
+	f2fs_down_read(&SM_I(sbi)->curseg_lock);
 
 	mutex_lock(&curseg->curseg_mutex);
 	down_write(&sit_i->sentry_lock);
@@ -5210,7 +5223,7 @@ int build_curseg_streams(struct f2fs_sb_info *sbi)
     int i, err;
     unsigned int stream;
 
-    for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_NODE; i++) {
+    for (i = 0; i < NR_CURSEG_TYPE; i++) {
         while (__test_and_set_inuse_new_stream(sbi, i, &stream)) {
             err = __init_curseg_stream(sbi, i, stream);
             if (err)

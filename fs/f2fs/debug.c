@@ -441,10 +441,8 @@ static int stat_show(struct seq_file *s, void *v)
         seq_printf(s, "  - Stream Allocation:\n");
         if (F2FS_OPTION(si->sbi).stream_alloc_policy == STREAM_ALLOC_SPF)
             seq_printf(s, "         Policy: %3s\n", "SPF");
-        else if (F2FS_OPTION(si->sbi).stream_alloc_policy == STREAM_ALLOC_SRR)
-            seq_printf(s, "         Policy: %3s\n", "SRR");
         else
-            seq_printf(s, "         Policy: %4s\n", "AMFS");
+            seq_printf(s, "         Policy: %3s\n", "SRR");
         seq_printf(s, "  - Maximum Streams: %u\n", 
                 si->nr_max_streams);
         seq_printf(s, "  - Active Streams: %u\n",
