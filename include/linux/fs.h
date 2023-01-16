@@ -685,8 +685,6 @@ struct inode {
 #endif
 
     u8 i_exclusive_data_stream;
-    u8 i_has_streammap; /* indicate if streammap is set */
-    unsigned long i_streammap;
 
 	void			*i_private; /* fs or device private pointer */
 } __randomize_layout;

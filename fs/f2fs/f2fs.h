@@ -291,9 +291,8 @@ enum {
  * indicate stream allocation policy
  */
 enum {
-    STREAM_ALLOC_SRR, /* stream round robin */
-    STREAM_ALLOC_SPF, /* stream pinned files */
-    STREAM_ALLOC_AMFS, /* application managed file streams */
+    STREAM_ALLOC_SRR,
+    STREAM_ALLOC_SPF
 };
 #endif
 
@@ -855,10 +854,6 @@ struct f2fs_inode_info {
     bool i_has_exclusive_data_stream; /* indicate if file holds a data stream exclusively */
     bool i_should_release_stream; /* indicate if file was deleted and should release stream */
     spinlock_t i_streams_lock; /* lock the streams info */
-    bool i_has_streammap; /* indicate if the inode has an assigned bitmap */
-    bool i_has_streammap_init; /* indicate if streammap has been initialized */
-    unsigned int i_last_stream; /* for rr allocation on bitmap store last allocated one */
-    unsigned int i_last_segno; /* stride RR allocation on stream to be in segment, gets closer to MDTS */
 #endif
 };
 
@@ -1293,9 +1288,6 @@ struct f2fs_dev_info {
 	unsigned int nr_blkz;		/* Total number of zones */
 	unsigned long *blkz_seq;	/* Bitmap indicating sequential zones */
 	block_t *zone_capacity_blocks;  /* Array of zone capacity in blks */
-    unsigned int max_active_zones;
-	unsigned long *blkz_active;	/* Bitmap indicating active zones */
-	spinlock_t blkz_active_lock; /* for blkz_active bitmap lock */
 #endif
 };
 
@@ -1910,8 +1902,6 @@ struct f2fs_sb_info {
     atomic_t rr_stride_ctr[NR_CURSEG_TYPE];
     spinlock_t resmap_lock;
     unsigned long **resmap; /* bitmap per TYPE to maintain reserved exclusive streams for files */
-    bool busy_stream[NR_CURSEG_TYPE * MAX_ACTIVE_LOGS]; /* flag to indicate if a stream cannot allocate a new section,
-                                                           must wait for an active zone to be released to allocate a new one */
 #endif
 };
 

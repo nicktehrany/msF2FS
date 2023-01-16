@@ -982,8 +982,6 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SRR;
 			} else if (!strcmp(name, "spf")) {
 				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SPF;
-			} else if (!strcmp(name, "amfs")) {
-				F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_AMFS;
 			} else {
 				kfree(name);
 				return -EINVAL;
@@ -1722,7 +1720,6 @@ static void destroy_device_list(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_BLK_DEV_ZONED
 		kvfree(FDEV(i).blkz_seq);
 		kfree(FDEV(i).zone_capacity_blocks);
-		kvfree(FDEV(i).blkz_active);
 #endif
 	}
 	kvfree(sbi->devs);
@@ -3996,17 +3993,7 @@ static int f2fs_report_zone_cb(struct blk_zone *zone, unsigned int idx,
 	if (zone->len != zone->capacity && !rz_args->zone_cap_mismatch)
 		rz_args->zone_cap_mismatch = true;
 
-    switch (zone->cond) {
-        case BLK_ZONE_COND_IMP_OPEN:
-        case BLK_ZONE_COND_EXP_OPEN:
-        case BLK_ZONE_COND_CLOSED:
-            set_bit(idx, rz_args->dev->blkz_active);
-            break;
-        default:
-            break;
-    } 
-
-    return 0;
+	return 0;
 }
 
 static int init_blkz_info(struct f2fs_sb_info *sbi, int devi)
@@ -4046,13 +4033,6 @@ static int init_blkz_info(struct f2fs_sb_info *sbi, int devi)
 	if (!FDEV(devi).blkz_seq)
 		return -ENOMEM;
 
-	FDEV(devi).blkz_active = f2fs_kvzalloc(sbi,
-					BITS_TO_LONGS(FDEV(devi).nr_blkz)
-					* sizeof(unsigned long),
-					GFP_KERNEL);
-	if (!FDEV(devi).blkz_active)
-		return -ENOMEM;
-
 	/* Get block zones type and zone-capacity */
 	FDEV(devi).zone_capacity_blocks = f2fs_kzalloc(sbi,
 					FDEV(devi).nr_blkz * sizeof(block_t),
@@ -4062,21 +4042,6 @@ static int init_blkz_info(struct f2fs_sb_info *sbi, int devi)
 
 	rep_zone_arg.dev = &FDEV(devi);
 	rep_zone_arg.zone_cap_mismatch = false;
-
-    FDEV(devi).max_active_zones = bdev_max_active_zones(bdev);
-
-#ifdef CONFIG_F2FS_MULTI_STREAM
-    /* Note, only support single device for now */
-    if (sbi->nr_max_streams > FDEV(devi).max_active_zones - RESERVED_BACKUP_ZONES) {
-        f2fs_err(sbi, "Too many streams specific. Streams specific %u"
-                " but active zones supported %u and %u zones reserved as backup.", 
-                sbi->nr_max_streams, FDEV(devi).max_active_zones, 
-                RESERVED_BACKUP_ZONES);
-        return -EINVAL;
-    }
-#endif
-
-	spin_lock_init(&FDEV(devi).blkz_active_lock);
 
 	ret = blkdev_report_zones(bdev, 0, BLK_ALL_ZONES, f2fs_report_zone_cb,
 				  &rep_zone_arg);
