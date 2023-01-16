@@ -59,6 +59,9 @@
 #define F_SET_EXCLUSIVE_DATA_STREAM  (F_LINUX_SPECIFIC_BASE + 15)
 #define F_UNSET_EXCLUSIVE_DATA_STREAM  (F_LINUX_SPECIFIC_BASE + 16)
 
+/* fcntl call to set a stream bitmap for an inode */
+#define F_SET_DATA_STREAM_MAP  (F_LINUX_SPECIFIC_BASE + 17)
+
 /*
  * Valid hint values for F_{GET,SET}_RW_HINT. 0 is "not set", or can be
  * used to clear any hints previously set.
