@@ -26,9 +26,47 @@ This is a naive approach that allocates blocks, independent of file, in a round-
 
 This policy assigns a stream to each file on the first block allocation it does for that file. The stream to be assigned is decided in round-robin fashion, however once a file is assigned a stream, its data is only ever allocated in that stream (unless GC moves it which can map it to a different stream, or the file system runs out of space, in which case it uses first-fit policy among the streams). This information is stored in the VFS inode, and is therefore __not__ persistent.
 
+Since multiple files can be mapped to the same stream, this policy has the option for an application to set a flag in the inode that exclusively reserves a stream for only this file. All other files mapped to this stream are then migrated to the next available stream (after the current one) in round-robin. The migrated file will then only be written to the newly assigned stream, and new file allocates cannot go onto the reserved stream. Since there must always be at least one stream available, stream 0 cannot be reserved (GC is also writing to this stream). This option utilizes `fcntl()` and can be set as follows:
+
+```c
+#define F_LINUX_SPECIFIC_BASE 1024
+#define F_SET_EXCLUSIVE_DATA_STREAM (F_LINUX_SPECIFIC_BASE + 15)
+#define F_UNSET_EXCLUSIVE_DATA_STREAM (F_LINUX_SPECIFIC_BASE + 16)
+
+/* .... Some code here for a program .... */
+
+/* set the exclusive stream on an open file fd */
+if (fcntl(out, F_UNSET_EXCLUSIVE_DATA_STREAM) < 0) {
+    if (errno == EINVAL) {
+        ERR_MSG("F_UNSET_EXCLUSIVE_DATA_STREAM not supported\n");
+    }
+}
+```
+
 #### Application Managed File Streams (AMFS)
 
 This policy gives full control of stream mappings to the host application. It does this by mapping each file by default to stream 0, unless the host application provides a bitmap, with the bits set on which streams the file shall be mapped to. The streams that are supplied are then utilized in a fashion that aims to fill a segment and then move to the next segment whose bit is set in the bitmap. Therefore, allowing to decrease fragmentation if multiple streams are set.
+
+In order to provide the bitmap from the application, `fcntl()` is used with the `F_SET_DATA_STREAM_MAP` option, which takes a bitmap as an argument. Below we have an example utilizing this, where a full example can also be seen in [zns-tools fpbench.h](https://github.com/nicktehrany/zns-tools/blob/master/src/fpbench.h#L29) and [zns-tools fpbench.c](https://github.com/nicktehrany/zns-tools/blob/master/src/fpbench.c#L117-#L126).
+
+```c
+#define F_LINUX_SPECIFIC_BASE 1024
+#define F_SET_DATA_STREAM_MAP (F_LINUX_SPECIFIC_BASE + 17)
+
+/* .... Some code here for a program .... */
+
+unsigned long *streammap = 0;
+
+/* set a bit in the map */
+*streammap |= (1 << 2);
+
+/* set the bitmap on an open file fd */
+if (fcntl(out, F_SET_DATA_STREAM_MAP, streammap) < 0) {
+    if (errno == EINVAL) {
+        ERR_MSG("F_SET_DATA_STREAM_MAP Invalid Argument\n");
+    }
+}
+```
 
 ## Compiling msF2FS
 
