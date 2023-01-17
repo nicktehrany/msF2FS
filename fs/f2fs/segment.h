@@ -36,6 +36,7 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 #define IS_WARM(t)	((t) == CURSEG_WARM_NODE || (t) == CURSEG_WARM_DATA)
 #define IS_COLD(t)	((t) == CURSEG_COLD_NODE || (t) == CURSEG_COLD_DATA)
 
+#ifndef CONFIG_F2FS_MULTI_STREAM
 #define IS_CURSEG(sbi, seg)						\
 	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
@@ -63,6 +64,7 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	  (sbi)->segs_per_sec) ||	\
 	 ((secno) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno /	\
 	  (sbi)->segs_per_sec))
+#endif
 
 #define MAIN_BLKADDR(sbi)						\
 	(SM_I(sbi) ? SM_I(sbi)->main_blkaddr : 				\
@@ -206,6 +208,9 @@ struct seg_entry {
 #ifdef CONFIG_F2FS_CHECK_FS
 	unsigned char *cur_valid_map_mir;	/* mirror of current valid bitmap */
 #endif
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream; /* stream id of the segment */
+#endif
 	/*
 	 * # of valid blocks and the validity bitmap stored in the last
 	 * checkpoint pack. This information is used by the SSR mode.
@@ -220,7 +225,11 @@ struct sec_entry {
 };
 
 struct segment_allocation {
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	void (*allocate_segment)(struct f2fs_sb_info *, int, bool, unsigned int);
+#else
 	void (*allocate_segment)(struct f2fs_sb_info *, int, bool);
+#endif
 };
 
 #define MAX_SKIP_GC_COUNT			16
@@ -320,6 +329,9 @@ struct curseg_info {
 	unsigned int next_segno;		/* preallocated segment */
 	int fragment_remained_chunk;		/* remained block size in a chunk for block fragmentation mode */
 	bool inited;				/* indicate inmem log is inited */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream; /* stream id the segment is in */
+#endif
 };
 
 struct sit_entry_set {
@@ -335,6 +347,67 @@ static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 {
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
 }
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned int __get_number_active_streams(struct f2fs_sb_info *sbi)
+{
+    unsigned int streams = 0;
+
+    /* Active streams read is atomic but let's make sure no other thread is 
+     * currently modifying any of the streams info 
+     * */
+	spin_lock(&sbi->streammap_lock);
+    streams = atomic_read(&sbi->nr_active_streams);
+	spin_unlock(&sbi->streammap_lock);
+    
+    return streams;
+}
+
+static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int stream)
+{
+    bool is_bit_set = false;
+
+	spin_lock(&sbi->streammap_lock);
+	is_bit_set = test_bit_le(stream, sbi->streammap[type]);
+	spin_unlock(&sbi->streammap_lock);
+
+    return is_bit_set;
+}
+
+static inline int IS_CURSEG(struct f2fs_sb_info *sbi, unsigned int segno)
+{
+    int stream, type;
+    int active_streams = __get_number_active_streams(sbi);
+
+    for (stream = 0; stream < active_streams; stream++) {
+        for (type = 0; type < NR_CURSEG_TYPE; type++) {
+            if (__test_inuse_stream(sbi, type, stream) && 
+                    segno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno)) 
+                return 1;
+        }
+    }
+
+    return 0;
+}
+
+static inline int IS_CURSEC(struct f2fs_sb_info *sbi, unsigned int secno)
+{
+    int stream, type;
+    int active_streams = __get_number_active_streams(sbi);
+
+    for (stream = 0; stream < active_streams; stream++) {
+        for (type = 0; type < NR_CURSEG_TYPE; type++) {
+            if (__test_inuse_stream(sbi, type, stream) && secno == (CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type)->segno / 
+                        sbi->segs_per_sec)) 
+                return 1;
+        }
+    }
+
+    return 0;
+}
+#endif
+
 
 static inline struct seg_entry *get_seg_entry(struct f2fs_sb_info *sbi,
 						unsigned int segno)
@@ -432,6 +505,571 @@ static inline void seg_info_to_raw_sit(struct seg_entry *se,
 	memcpy(se->ckpt_valid_map, rs->valid_map, SIT_VBLOCK_MAP_SIZE);
 	se->ckpt_valid_blocks = se->valid_blocks;
 }
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned int __find_next_inuse_stream(struct f2fs_sb_info *sbi,
+		unsigned int max, unsigned int stream, unsigned int type)
+{
+	unsigned int ret;
+	spin_lock(&sbi->streammap_lock);
+	ret = find_next_bit_le(sbi->streammap[type], max, stream);
+	spin_unlock(&sbi->streammap_lock);
+	return ret;
+}
+
+static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int *stream)
+{
+    bool new_stream = true;
+    unsigned int streams = 0;
+
+	spin_lock(&sbi->streammap_lock);
+
+    if (F2FS_OPTION(sbi).set_arg_nr_max_streams) {
+        if (atomic_read(&sbi->nr_active_streams) < sbi->nr_max_streams) {
+            *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
+            set_bit_le(*stream, sbi->streammap[type]);
+            atomic_inc(&sbi->nr_active_streams);
+        } else {
+            new_stream = false;
+        }
+    } else {
+        streams = find_next_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS, 0);
+        if (streams < F2FS_OPTION(sbi).nr_streams[type]) {
+            *stream = find_first_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS);
+            set_bit_le(*stream, sbi->streammap[type]);
+            atomic_inc(&sbi->nr_active_streams);
+        } else {
+            new_stream = false;
+        }
+    } 
+
+    spin_unlock(&sbi->streammap_lock);
+
+    return new_stream;
+}
+
+static inline unsigned int __get_number_active_streams_for_type(struct f2fs_sb_info *sbi,
+        unsigned int type)
+{
+    unsigned int streams = 0;
+
+	spin_lock(&sbi->streammap_lock);
+    streams = find_next_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS, 0);
+	spin_unlock(&sbi->streammap_lock);
+
+    return streams;
+}
+
+/* 
+ * Increases the stride counter and returns true if the stride has reached the configured
+ * value, thus allowing to start writing at the next stream 
+ * 
+ * Function assumes the spinlock_t on rr_active_stream_lock is held by the calling
+ * function.
+ */
+static inline bool __test_and_update_rr_stride(struct f2fs_sb_info *sbi, unsigned int type)
+{
+   unsigned int rr_stride = 0; 
+
+   rr_stride = atomic_read(&sbi->rr_stride_ctr[type]);
+
+   if (rr_stride == F2FS_OPTION(sbi).rr_stride) {
+        /* reset counter for current stream */
+        atomic_set(&sbi->rr_stride_ctr[type], 0);
+        /* increment counter for new write on next stream */
+        atomic_inc(&sbi->rr_stride_ctr[type]);
+
+        return true;
+   } else {
+        atomic_inc(&sbi->rr_stride_ctr[type]);
+
+        return false;
+   }
+}
+
+static inline unsigned int __get_current_stream_and_set_next_stream_active(struct f2fs_sb_info *sbi,
+        unsigned int type)
+{
+    unsigned int stream = 0;
+    bool next_stream = false;
+
+	spin_lock(&sbi->rr_active_stream_lock[type]);
+    stream = atomic_read(&sbi->rr_active_stream[type]);
+
+    /* first init */
+    if (stream == MAX_ACTIVE_LOGS)
+        goto first_init;
+
+    /* Only a single stream, no need for doing RR */
+    if (F2FS_OPTION(sbi).nr_streams[type] == 1) 
+        goto unchanged;
+
+    next_stream = __test_and_update_rr_stride(sbi, type);
+    if (next_stream && stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
+first_init:
+        atomic_set(&sbi->rr_active_stream[type], 0);
+        stream = 0;
+    } else if (next_stream) {
+        atomic_inc(&sbi->rr_active_stream[type]);
+        stream++;
+    }
+
+unchanged:
+	spin_unlock(&sbi->rr_active_stream_lock[type]);
+
+    return stream;
+}
+
+static inline bool __test_stream_reserved(struct f2fs_sb_info *sbi, unsigned int type,
+        unsigned int stream)
+{
+    bool is_bit_set = false;
+
+	spin_lock(&sbi->resmap_lock);
+	is_bit_set = test_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
+
+    return is_bit_set;
+}
+
+static inline unsigned int __get_next_file_stream_rr(struct f2fs_sb_info *sbi, 
+        unsigned int type)
+{
+    unsigned int stream = 0;
+
+	spin_lock(&sbi->rr_active_stream_lock[type]);
+
+    do {
+        stream = atomic_read(&sbi->rr_active_stream[type]);
+
+        /* first allocation for a stream */
+        if (stream == MAX_ACTIVE_LOGS) {
+            atomic_set(&sbi->rr_active_stream[type], 0);
+            stream = 0;
+            continue;
+        }
+
+        if (stream == F2FS_OPTION(sbi).nr_streams[type] - 1) {
+            atomic_set(&sbi->rr_active_stream[type], 0);
+            stream = 0;
+        } else {
+            stream = atomic_inc_return(&sbi->rr_active_stream[type]);
+        }
+    } while (__test_stream_reserved(sbi, type, stream));
+
+    spin_unlock(&sbi->rr_active_stream_lock[type]);
+
+    return stream;
+}
+
+/* sets and returns a file stream for an inode based on SPF policy.
+ * Assumes the caller is holding the spinlock i_streams_lock for the inode.
+ *
+ * Note, this function modifies the inode in all cases, therefore after releasing 
+ * the spinlock i_streams_lock in the calling function, 
+ * f2fs_mark_inode_dirty_sync(inode, true) should be called 
+ */
+static inline unsigned int __set_and_return_file_data_stream(struct f2fs_sb_info *sbi,
+        unsigned int type, struct inode *inode)
+{
+    unsigned int stream = 0;
+    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+    unsigned int next_free_stream;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+
+    if (inode->i_exclusive_data_stream) {
+        /* only have a single stream, no exclusive reservation or RR allocation needed */
+        if (active_streams == 1)
+            goto fail_set_exclusive;
+
+        spin_lock(&sbi->resmap_lock);
+
+        /* Stream 0 is a special stream, non-reservable by files for exclusive access */
+        next_free_stream = find_next_zero_bit_le(sbi->resmap[type], MAX_ACTIVE_LOGS, 1);
+
+        /* we always need to keep at least 1 non-exclusive stream for data (stream 0), therefore
+         * fail exclusive stream allocation if all other streams are reserved */
+        if (next_free_stream == active_streams) {
+            /* need to release lock because call to __get_next_file_stream_rr may also attempt lock */
+            spin_unlock(&sbi->resmap_lock);
+
+            /* fall back to RR based file stream allocation */
+            stream = __get_next_file_stream_rr(sbi, type);
+            goto fail_set_exclusive;
+        } else {
+            stream = next_free_stream;
+            set_bit_le(stream, sbi->resmap[type]);
+            sbi->streams_inomap[stream * NR_CURSEG_TYPE + type] = inode->i_ino;
+
+            spin_unlock(&sbi->resmap_lock);
+            fi->i_has_exclusive_data_stream = true;
+        }
+    } else {
+        stream = __get_next_file_stream_rr(sbi, type);
+    }
+
+set_stream:
+    fi->i_data_stream = stream;
+    fi->i_has_pinned_data_stream = true;
+
+    return stream;
+
+fail_set_exclusive:
+    /* Failing resets the inode flag and prints a kernel info message */
+    f2fs_info(sbi, "Failed setting exclusive stream for inode %lu. No free exclusive streams available.", inode->i_ino);
+    inode->i_exclusive_data_stream = false;
+
+    goto set_stream;
+}
+
+/*
+ * Sets and returns the node stream for a file.
+ * NOTE, we currently do not support mutliple NODE streams, therefore this will always return 0 */
+static inline unsigned int __set_and_return_file_node_stream(struct f2fs_sb_info *sbi, unsigned int type,
+        struct inode *inode)
+{
+    unsigned int stream = 0;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+
+    stream = __get_next_file_stream_rr(sbi, type);
+
+    f2fs_down_write(&fi->i_sem);
+    fi->i_node_stream = stream;
+    fi->i_has_pinned_node_stream = true;
+    f2fs_up_write(&fi->i_sem);
+
+    return stream;
+}
+
+/* Gets a stream from the bitmap in the inode. If no bitmap is in the inode, returns stream 0.
+ * Otherwise set stream is returned if it is an active stream. If the stream is inactive,
+ * the application provided streammap is reset and stream 0 is returned.
+ * If multiple streams are set in the bitmap, RR between the streams and stride that fills a segment,
+ * which aims to decrease fragmentation and get close to MDTS of the used ZNS device. Therefore,
+ * once a segment in a stream is fully written RR goes to the next stream.
+ *
+ * Note, function assumes the caller is holding i_streams_lock.
+ */
+static inline unsigned int __get_stream_from_inode_streammap(struct f2fs_sb_info *sbi,
+        unsigned int type, struct inode *inode)
+{
+    struct curseg_info *curseg;
+    unsigned int stream = 0;
+    unsigned int tested = 0;
+    unsigned int segno = 0;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+
+    /* this init only happens once, the first block written of the inode */
+    if (unlikely(!fi->i_has_streammap_init))
+        fi->i_has_streammap_init = true;
+
+    /* only have a single stream, no exclusive reservation or RR allocation needed */
+    if (active_streams == 1)
+        goto fail_streammap;
+    
+get_stream:
+    /* RR restart checking streams from stream 0 */
+    if (fi->i_last_stream == active_streams)
+        fi->i_last_stream = 0;
+    stream = find_next_bit(&inode->i_streammap, active_streams, fi->i_last_stream);
+
+    /* If stream is not active, application set bitmap is not valid,
+     * skip this stream and check the next one.
+     * At least 1 stream bit MUST be set, otherwise fcntl would have
+     * failed and not set it. Avoids this infinitely looping. */
+    if (!__test_inuse_stream(sbi, type, stream)) {
+        fi->i_last_stream = stream;
+        tested++;
+
+        /* if inode streammap only contains invalid bits identify when
+         * to fail and fallback to stream 0 */
+        if (tested == active_streams) {
+            stream = 0;
+            goto fail_streammap;
+        }
+
+        goto get_stream;
+    }
+
+    /* passed above checks, enable streammap flag */
+    fi->i_has_streammap = true;
+
+	curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
+    segno = curseg->segno;
+
+    if (unlikely(curseg->segno == NULL_SEGNO)) {
+        /* if the stream runs out of space, it means the file system
+         * is mostly utilized and we ignore the application hint
+         * and f2fs_allocate_data_block will find the first fit for
+         * the block in a stream and assign this. Hence, we still return
+         * the bad stream and let caller handle it, which will repeat 
+         * this check */
+        goto got_stream;
+    } else {
+        if (fi->i_last_segno == 0 || segno == fi->i_last_segno) {
+            fi->i_last_segno = segno;
+            goto got_stream;
+        } else {
+            fi->i_last_stream = stream + 1; 
+            fi->i_last_segno = 0; /* reset i_last_segno to get new stream */
+            goto get_stream;
+        }
+    }
+
+got_stream:
+    return stream;
+
+fail_streammap:
+    /* Failing resets the inode flag and prints a kernel info message */
+    f2fs_info(sbi, "Failed getting valid streammap for inode %lu. Disabling streammap for inode.", inode->i_ino);
+    fi->i_has_streammap = false;
+    stream = 0;
+
+    goto got_stream;
+}
+
+/* 
+ * Get the stream index for an inode and clear it. This function must only
+ * be called during deallocation of an exclusive stream.
+ * Assumes the caller holds the sbi->resmap_lock 
+ */
+static inline unsigned int __get_and_clear_stream_index_from_inode(struct f2fs_sb_info *sbi,
+        unsigned long ino, unsigned int *stream)
+{
+    unsigned int type;
+    unsigned int active_streams;
+
+    for (type = CURSEG_HOT_DATA; type < NR_PERSISTENT_LOG; type++) {
+        active_streams = __get_number_active_streams_for_type(sbi, type);
+        for (*stream = 0; *stream < active_streams; (*stream)++) {
+            if (sbi->streams_inomap[*stream * NR_CURSEG_TYPE + type] == ino) {
+                sbi->streams_inomap[*stream * NR_CURSEG_TYPE + type] = 0;
+                return type;
+            }
+        }
+    }
+
+    /* Should never get here */
+    return -EINVAL;
+}
+
+static inline unsigned int __test_ino_holds_exclusive_stream(struct f2fs_sb_info *sbi,
+        unsigned long ino)
+{
+    unsigned int i, j;
+    unsigned int active_streams;
+
+    for (i = CURSEG_HOT_DATA; i < NR_PERSISTENT_LOG; i++) {
+        active_streams = __get_number_active_streams_for_type(sbi, i);
+        for (j = 0; j < active_streams; j++) {
+            if (sbi->streams_inomap[j * NR_CURSEG_TYPE + i] == ino) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static inline void __release_exclusive_data_stream(struct f2fs_sb_info *sbi, 
+        struct inode *inode)
+{
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+    unsigned int stream;
+    unsigned int type; 
+
+	spin_lock(&sbi->resmap_lock);
+    type = __get_and_clear_stream_index_from_inode(sbi, inode->i_ino, &stream);
+	__clear_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
+
+    fi->i_has_exclusive_data_stream = false;
+}
+
+/* Different from __release_exclusive_data_stream this function is meant for
+ * inodes that are being deleted, hence no need to update any inode flags.
+ */
+static inline void __clear_exclusive_data_stream(struct f2fs_sb_info *sbi, 
+        unsigned long ino)
+{
+    unsigned int stream;
+    unsigned int type; 
+
+	spin_lock(&sbi->resmap_lock);
+    type = __get_and_clear_stream_index_from_inode(sbi, ino, &stream);
+	__clear_bit_le(stream, sbi->resmap[type]);
+	spin_unlock(&sbi->resmap_lock);
+}
+
+static inline unsigned int __get_number_reserved_streams_for_type(struct f2fs_sb_info *sbi,
+        unsigned int type)
+{
+    unsigned int streams = 0;
+    unsigned int active_streams = __get_number_active_streams_for_type(sbi, type);
+    int i;
+
+	spin_lock(&sbi->resmap_lock);
+    for (i = 0; i < active_streams; i++) {
+        if (test_bit_le(i, sbi->resmap[type]))
+            streams++;
+    }
+	spin_unlock(&sbi->resmap_lock);
+
+    return streams;
+}
+
+static inline unsigned long __get_reserved_stream_inode(struct f2fs_sb_info *sbi,
+        unsigned int type, unsigned int stream)
+{
+    unsigned long ino;
+
+	spin_lock(&sbi->resmap_lock);
+    ino = sbi->streams_inomap[stream * NR_CURSEG_TYPE + type];
+	spin_unlock(&sbi->resmap_lock);
+
+    return ino;
+}
+
+struct f2fs_report_zone_state_args {
+	struct f2fs_dev_info *dev;
+};
+
+static int check_zone_state(struct f2fs_dev_info *dev, struct blk_zone *zone, 
+        unsigned int idx)
+{
+    switch (zone->cond) {
+        case BLK_ZONE_COND_IMP_OPEN:
+        case BLK_ZONE_COND_EXP_OPEN:
+        case BLK_ZONE_COND_CLOSED:
+            set_bit(idx, dev->blkz_active);
+            break;
+        default:
+            clear_bit(idx, dev->blkz_active);
+            break;
+    } 
+
+    return 0;
+}
+
+static int f2fs_report_zone_state_cb(struct blk_zone *zone, unsigned int idx,
+				      void *data)
+{
+	struct f2fs_report_zone_state_args *args;
+
+	args = (struct f2fs_report_zone_state_args *)data;
+
+	return check_zone_state(args->dev, zone, idx);
+}
+
+/* Loops over the active zones in the blkz_active bitmap and identifies if these are 
+ * still active on the device, if not the callback function resets that bit.
+ *
+ * Function returns bool identifying if maximum number of active zones are being used. 
+ *
+ */
+static inline bool __has_max_active_zones(struct f2fs_sb_info *sbi, unsigned int segno)
+{
+    int ret;
+	unsigned int dev_idx;
+    unsigned int active_zones = 0;
+    unsigned int next_zone = 0;
+    struct f2fs_report_zone_state_args rep_zone_arg;
+
+    dev_idx = f2fs_target_device_index(sbi, START_BLOCK(sbi, segno));
+
+    rep_zone_arg.dev = &FDEV(dev_idx);
+    ret = blkdev_report_zones(FDEV(dev_idx).bdev, 0, BLK_ALL_ZONES,
+            f2fs_report_zone_state_cb, &rep_zone_arg);
+
+    if (ret < 0)
+        return true; /* something failed - assume cannot allocate new section */
+
+    spin_lock(&FDEV(dev_idx).blkz_active_lock);
+    next_zone = find_first_bit(FDEV(dev_idx).blkz_active, FDEV(dev_idx).nr_blkz);
+
+    do {
+        if (test_bit(next_zone, FDEV(dev_idx).blkz_active))
+            active_zones++;
+
+        next_zone = find_next_bit(FDEV(dev_idx).blkz_active, 
+                FDEV(dev_idx).nr_blkz, next_zone + 1);
+    } while (next_zone != FDEV(dev_idx).nr_blkz);
+
+    spin_unlock(&FDEV(dev_idx).blkz_active_lock);
+
+    /* we need to keep 3 zones as safety buffer in case NODE zone has not been written
+     * and the zone is therefore not active yet. If we use up its resource with DATA streams
+     * we cannot fall back to writing somewhere else when we are out of active zones.
+     */
+    return active_zones > FDEV(dev_idx).max_active_zones - RESERVED_BACKUP_ZONES;
+}
+
+static inline bool __has_cursec_reached_last_seg(struct f2fs_sb_info *sbi,
+        unsigned int segno)
+{
+	unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
+	unsigned int start_segno = GET_SEG_FROM_SEC(sbi, secno);
+	unsigned int end_segno = start_segno + sbi->segs_per_sec;
+
+	if (__is_large_section(sbi))
+		end_segno = rounddown(end_segno, sbi->segs_per_sec);
+
+	if (f2fs_sb_has_blkzoned(sbi))
+		end_segno -= sbi->segs_per_sec -
+					f2fs_usable_segs_in_sec(sbi, segno);
+
+    /* next segment is the write end */
+    return end_segno - 1 == segno;
+}
+
+static inline bool __is_curseg_full(struct f2fs_sb_info *sbi,
+        struct curseg_info *curseg)
+{
+	unsigned int left_blocks = f2fs_usable_blks_in_seg(sbi, curseg->segno) -
+			get_seg_entry(sbi, curseg->segno)->ckpt_valid_blocks;
+
+
+    /* current allocation will go into the last block, hence check equal to 1 */
+    return left_blocks == 1; 
+}
+
+
+static inline bool __can_allocate_new_section(struct f2fs_sb_info *sbi,
+        struct curseg_info *curseg, unsigned int type, 
+        unsigned int stream)
+{
+    if (unlikely(sbi->busy_stream[stream * NR_CURSEG_TYPE + type])) {
+        if (__has_max_active_zones(sbi, curseg->segno))
+            return false;
+        else {
+            /* an active zone has become available */
+            sbi->busy_stream[stream * NR_CURSEG_TYPE + type] = false;
+            goto skip_check;
+        }
+    }
+
+    if (likely(!__is_curseg_full(sbi, curseg)))
+        goto skip_check;
+    else {
+        if (likely(!__has_cursec_reached_last_seg(sbi, curseg->segno)))
+            goto skip_check;
+
+        /* curseg is allocating the last block in the current section, hence the next allocation
+         * will have to check if an active zone is available to allocate it.
+         *
+         * Note, this will still return true for the last allocation in the block, but sets a flag
+         * to check for active zones on the next allocation. 
+         */
+        sbi->busy_stream[stream * NR_CURSEG_TYPE + type] = true;
+    }
+
+skip_check:
+    return true;
+}
+#endif
+
 
 static inline unsigned int find_next_inuse(struct free_segmap_info *free_i,
 		unsigned int max, unsigned int segno)
@@ -684,6 +1322,15 @@ enum {
 	F2FS_IPU_HONOR_OPU_WRITE,
 };
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned int curseg_segno_at(struct f2fs_sb_info *sbi,
+		int type, int stream)
+{
+	struct curseg_info *curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
+	return curseg->segno;
+}
+#endif
+
 static inline unsigned int curseg_segno(struct f2fs_sb_info *sbi,
 		int type)
 {
@@ -691,12 +1338,30 @@ static inline unsigned int curseg_segno(struct f2fs_sb_info *sbi,
 	return curseg->segno;
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned char curseg_alloc_type_at(struct f2fs_sb_info *sbi,
+		int type, int stream)
+{
+	struct curseg_info *curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
+	return curseg->alloc_type;
+}
+#endif
+
 static inline unsigned char curseg_alloc_type(struct f2fs_sb_info *sbi,
 		int type)
 {
 	struct curseg_info *curseg = CURSEG_I(sbi, type);
 	return curseg->alloc_type;
 }
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static inline unsigned short curseg_blkoff_at(struct f2fs_sb_info *sbi, int type,
+        int stream)
+{
+	struct curseg_info *curseg = CURSEG_I(sbi, stream * NR_CURSEG_TYPE + type);
+	return curseg->next_blkoff;
+}
+#endif
 
 static inline unsigned short curseg_blkoff(struct f2fs_sb_info *sbi, int type)
 {

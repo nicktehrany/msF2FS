@@ -31,6 +31,10 @@
 /* 0, 1(node nid), 2(meta nid) are reserved node id */
 #define F2FS_RESERVED_NODE_NUM		3
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+#define RESERVED_BACKUP_ZONES 3
+#endif
+
 #define F2FS_ROOT_INO(sbi)	((sbi)->root_ino_num)
 #define F2FS_NODE_INO(sbi)	((sbi)->node_ino_num)
 #define F2FS_META_INO(sbi)	((sbi)->meta_ino_num)
@@ -150,11 +154,21 @@ struct f2fs_checkpoint {
 	__le32 free_segment_count;	/* # of free segments in main area */
 
 	/* information of current node segments */
+    /* TODO WITH THIS CHECKPOITN DOESN'T FIT INTO A PAGE */
+/* #ifdef CONFIG_F2FS_MULTI_STREAM */
+/*     __le32 nr_max_streams; */
+/* 	__le32 cur_node_segno[MAX_ACTIVE_LOGS * 3]; /1* 3 for each type hot/warm/cold *1/ */
+/* 	__le16 cur_node_blkoff[MAX_ACTIVE_LOGS * 3]; */
+/* 	/1* information of current data segments *1/ */
+/* 	__le32 cur_data_segno[MAX_ACTIVE_LOGS * 3]; */
+/* 	__le16 cur_data_blkoff[MAX_ACTIVE_LOGS * 3]; */
+/* #else */
 	__le32 cur_node_segno[MAX_ACTIVE_NODE_LOGS];
 	__le16 cur_node_blkoff[MAX_ACTIVE_NODE_LOGS];
 	/* information of current data segments */
 	__le32 cur_data_segno[MAX_ACTIVE_DATA_LOGS];
 	__le16 cur_data_blkoff[MAX_ACTIVE_DATA_LOGS];
+/* #endif */
 	__le32 ckpt_flags;		/* Flags : umount and journal_present */
 	__le32 cp_pack_total_block_count;	/* total # of one cp pack */
 	__le32 cp_pack_start_sum;	/* start block number of data summary */
@@ -166,7 +180,11 @@ struct f2fs_checkpoint {
 	__le32 checksum_offset;		/* checksum offset inside cp block */
 	__le64 elapsed_time;		/* mounted time */
 	/* allocation type of current segment */
-	unsigned char alloc_type[MAX_ACTIVE_LOGS];
+/* #ifdef CONFIG_F2FS_MULTI_STREAM */
+/*     unsigned char alloc_type[MAX_ACTIVE_LOGS * 8]; */
+/* #else */
+    unsigned char alloc_type[MAX_ACTIVE_LOGS];
+/* #endif */
 
 	/* SIT and NAT version bitmap */
 	unsigned char sit_nat_version_bitmap[];

@@ -150,3 +150,33 @@ config F2FS_UNFAIR_RWSEM
 	help
 	  Use unfair rw_semaphore, if system configured IO priority by block
 	  cgroup.
+
+
+config F2FS_MULTI_STREAM
+    bool "F2FS multi-streamed data logging (EXPERIMENTAL)"
+    depends on F2FS_FS 
+    depends on BLK_DEV_ZONED
+    help
+        Experimental implementation that, instead of using 3 data logs 
+        (hot/warm/cold) allows using multiple of such logs in a new streams 
+        abstraction. This is designed for ZNS devices, where a zone maps 
+        to a single section, and streams allows concurrent accesses under a
+        data classification (hot/warm/cold) across zones. A total up to 16 
+        collective (for all types) streams is supported, where by default each
+        type has at least a single stream. Therefore, the maximum number of streams
+        for a single type is 11 (16 - 5 types with one stream each). Streams can be 
+        configured providing a maximum number of streams per type, with -o 
+        hot_data_streams=X (with X number), and similarly for other warm/cold data
+        streams. If no option is provided for a type, this type will default 
+        to a maximum 1 stream. The default allocation of streams is based on
+        Stream Pinned Files, where files are assigned a stream on their first
+        block allocation and remain in this stream until deletion, being garbage
+        collected, or the file system runs out of free sections at which point files
+        are assigned new streams, that still have free segments, based on a first fit
+        policy. An additional stream round robin policy for individual blocks is supported,
+        where 4KiB blocks are assigned to streams, independent of the file. This
+        policy can be enabled by specifying -o stream_policy=srr. 
+        This is intended for use with ZNS devices, and currently may not work on 
+        conventional SSD, as features such as SSR are not possible on ZNS they 
+        have not been tested. Furthermore, currently checkpoints and recovery
+        are not supported.

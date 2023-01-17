@@ -684,6 +684,10 @@ struct inode {
 	struct fsverity_info	*i_verity_info;
 #endif
 
+    u8 i_exclusive_data_stream;
+    u8 i_has_streammap; /* indicate if streammap is set */
+    unsigned long i_streammap;
+
 	void			*i_private; /* fs or device private pointer */
 } __randomize_layout;
 

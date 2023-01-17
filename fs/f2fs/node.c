@@ -542,8 +542,6 @@ int f2fs_get_node_info(struct f2fs_sb_info *sbi, nid_t nid,
 				struct node_info *ni, bool checkpoint_context)
 {
 	struct f2fs_nm_info *nm_i = NM_I(sbi);
-	struct curseg_info *curseg = CURSEG_I(sbi, CURSEG_HOT_DATA);
-	struct f2fs_journal *journal = curseg->journal;
 	nid_t start_nid = START_NID(nid);
 	struct f2fs_nat_block *nat_blk;
 	struct page *page = NULL;
@@ -552,6 +550,10 @@ int f2fs_get_node_info(struct f2fs_sb_info *sbi, nid_t nid,
 	pgoff_t index;
 	block_t blkaddr;
 	int i;
+    /* NOTE: Multi-stream currently has no support for per-stream journals,
+     * therefore all is still on stream 0 */
+    struct curseg_info *curseg = CURSEG_I(sbi, CURSEG_HOT_DATA);
+    struct f2fs_journal *journal = curseg->journal;
 
 	ni->nid = nid;
 retry:

@@ -311,6 +311,59 @@ static long fcntl_rw_hint(struct file *file, unsigned int cmd,
 	}
 }
 
+static bool streammap_valid(unsigned long streammap)
+{
+    /* maximum of 11 streams for a single type, since there can be
+     * 16 active streams and we need at least one stream per type */
+    return !bitmap_empty(&streammap, 11);
+}
+
+
+static long fcntl_data_streammap(struct file *file, unsigned int cmd,
+        unsigned long arg)
+{
+	struct inode *inode = file_inode(file);
+	u64 __user *argp = (u64 __user *)arg;
+    unsigned long streammap;
+
+	switch (cmd) {
+    case F_SET_DATA_STREAM_MAP:
+		if (copy_from_user(&streammap, argp, sizeof(unsigned long)))
+			return -EFAULT;
+		if (!streammap_valid(streammap))
+			return -EINVAL;
+
+		inode_lock(inode);
+		inode->i_streammap = streammap;
+        inode->i_has_streammap = true;
+		inode_unlock(inode);
+		return 0;
+	default:
+		return -EINVAL;
+	}
+
+}
+
+static long fcntl_set_data_stream(struct file *file, unsigned int cmd)
+{
+	struct inode *inode = file_inode(file);
+
+	switch (cmd) {
+	case F_SET_EXCLUSIVE_DATA_STREAM:
+		inode_lock(inode);
+		inode->i_exclusive_data_stream = true;
+		inode_unlock(inode);
+		return 0;
+    case F_UNSET_EXCLUSIVE_DATA_STREAM:
+		inode_lock(inode);
+		inode->i_exclusive_data_stream = false;
+		inode_unlock(inode);
+        return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
 static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		struct file *filp)
 {
@@ -416,6 +469,13 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_SET_RW_HINT:
 		err = fcntl_rw_hint(filp, cmd, arg);
 		break;
+    case F_SET_EXCLUSIVE_DATA_STREAM:
+    case F_UNSET_EXCLUSIVE_DATA_STREAM:
+        err = fcntl_set_data_stream(filp, cmd);
+        break;
+    case F_SET_DATA_STREAM_MAP:
+        err = fcntl_data_streammap(filp, cmd, arg);
+        break;
 	default:
 		break;
 	}

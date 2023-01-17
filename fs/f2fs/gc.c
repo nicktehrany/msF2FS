@@ -1231,6 +1231,9 @@ static int move_data_block(struct inode *inode, block_t bidx,
 		.encrypted_page = NULL,
 		.in_list = false,
 		.retry = false,
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        .stream = 0,
+#endif
 	};
 	struct dnode_of_data dn;
 	struct f2fs_summary sum;
@@ -1242,6 +1245,12 @@ static int move_data_block(struct inode *inode, block_t bidx,
 	int type = fio.sbi->am.atgc_enabled && (gc_type == BG_GC) &&
 				(fio.sbi->gc_mode != GC_URGENT_HIGH) ?
 				CURSEG_ALL_DATA_ATGC : CURSEG_COLD_DATA;
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream;
+    struct f2fs_inode_info *fi = F2FS_I(inode);
+    bool dirtied = false;
+#endif
 
 	/* do not read out */
 	page = f2fs_grab_cache_page(inode->i_mapping, bidx, false);
@@ -1319,8 +1328,40 @@ static int move_data_block(struct inode *inode, block_t bidx,
 	set_summary(&sum, dn.nid, dn.ofs_in_node, ni.version);
 
 	/* allocate block address */
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    /* If a file is GCed and is holding an exclusive stream, it must be released.
+     * Since GC moves data to COLD, this avoids locking exclusive streams
+     * if the data is no longer of the same type. 
+     */
+    if (F2FS_OPTION(fio.sbi).stream_alloc_policy == STREAM_ALLOC_SRR) {
+        spin_lock(&fi->i_streams_lock);
+        if (fi->i_has_exclusive_data_stream) {
+            __release_exclusive_data_stream(fio.sbi, inode);
+            dirtied = true;
+        }
+        spin_unlock(&fi->i_streams_lock);
+        if (dirtied)
+            f2fs_mark_inode_dirty_sync(inode, true);
+    } else if (F2FS_OPTION(fio.sbi).stream_alloc_policy == STREAM_ALLOC_AMFS) {
+        /* Need to reset the streams bitmap in the inode, if set, since data
+         * can move to new type (e.g., HOT to COLD after GC) */
+        spin_lock(&fi->i_streams_lock);
+        if (inode->i_has_streammap && fi->i_has_streammap) {
+            fi->i_has_streammap = false;
+            dirtied = true;
+        }
+        spin_unlock(&fi->i_streams_lock);
+        if (dirtied)
+            f2fs_mark_inode_dirty_sync(inode, true);
+    }
+
+    f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,
+            &sum, type, NULL, &stream);
+    fio.stream = stream;
+#else
 	f2fs_allocate_data_block(fio.sbi, NULL, fio.old_blkaddr, &newaddr,
 				&sum, type, NULL);
+#endif
 
 	fio.encrypted_page = f2fs_pagecache_get_page(META_MAPPING(fio.sbi),
 				newaddr, FGP_LOCK | FGP_CREAT, GFP_NOFS);
@@ -1953,7 +1994,12 @@ static int free_segment_range(struct f2fs_sb_info *sbi,
 
 	/* Move out cursegs from the target range */
 	for (type = CURSEG_HOT_DATA; type < NR_CURSEG_PERSIST_TYPE; type++)
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        /* Currently GC segment allocations are pinned to stream 0 */
+		f2fs_allocate_segment_for_resize(sbi, type, start, end, 0);
+#else
 		f2fs_allocate_segment_for_resize(sbi, type, start, end);
+#endif
 
 	/* do GC to move out valid blocks in the range */
 	for (segno = start; segno <= end; segno += sbi->segs_per_sec) {

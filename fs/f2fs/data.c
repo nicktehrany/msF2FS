@@ -35,7 +35,11 @@ static struct kmem_cache *bio_entry_slab;
 static mempool_t *bio_post_read_ctx_pool;
 static struct bio_set f2fs_bioset;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+#define	F2FS_BIO_POOL_SIZE	(NR_CURSEG_TYPE * MAX_ACTIVE_LOGS)
+#else
 #define	F2FS_BIO_POOL_SIZE	NR_CURSEG_TYPE
+#endif
 
 int __init f2fs_init_bioset(void)
 {
@@ -592,12 +596,36 @@ int f2fs_init_write_merge_io(struct f2fs_sb_info *sbi)
 		int n = (i == META) ? 1 : NR_TEMP_TYPE;
 		int j;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        unsigned int k;
+#else
 		sbi->write_io[i] = f2fs_kmalloc(sbi,
 				array_size(n, sizeof(struct f2fs_bio_info)),
 				GFP_KERNEL);
 		if (!sbi->write_io[i])
 			return -ENOMEM;
+#endif
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        for (k = 0; k < MAX_ACTIVE_LOGS; k++) {
+            sbi->write_io[k + (MAX_ACTIVE_LOGS * i)] = f2fs_kmalloc(sbi,
+                    array_size(n, sizeof(struct f2fs_bio_info)),
+                    GFP_KERNEL);
+            if (!sbi->write_io[k + (MAX_ACTIVE_LOGS * i)])
+                return -ENOMEM;
+
+            for (j = HOT; j < n; j++) {
+                init_f2fs_rwsem(&sbi->write_io[k + (MAX_ACTIVE_LOGS * i)][j].io_rwsem);
+                sbi->write_io[k + (MAX_ACTIVE_LOGS * i)][j].sbi = sbi;
+                sbi->write_io[k + (MAX_ACTIVE_LOGS * i)][j].bio = NULL;
+                spin_lock_init(&sbi->write_io[k + (MAX_ACTIVE_LOGS * i)][j].io_lock);
+                INIT_LIST_HEAD(&sbi->write_io[k + (MAX_ACTIVE_LOGS * i)][j].io_list);
+                INIT_LIST_HEAD(&sbi->write_io[k + (MAX_ACTIVE_LOGS * i)][j].bio_list);
+                init_f2fs_rwsem(&sbi->write_io[k + (MAX_ACTIVE_LOGS * i)][j].bio_list_lock);
+            }
+        }
+	}
+#else
 		for (j = HOT; j < n; j++) {
 			init_f2fs_rwsem(&sbi->write_io[i][j].io_rwsem);
 			sbi->write_io[i][j].sbi = sbi;
@@ -608,10 +636,32 @@ int f2fs_init_write_merge_io(struct f2fs_sb_info *sbi)
 			init_f2fs_rwsem(&sbi->write_io[i][j].bio_list_lock);
 		}
 	}
+#endif
 
 	return 0;
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
+				enum page_type type, enum temp_type temp,
+                unsigned int stream)
+{
+	enum page_type btype = PAGE_TYPE_OF_BIO(type);
+	struct f2fs_bio_info *io = sbi->write_io[stream + (MAX_ACTIVE_LOGS * btype)] + temp;
+
+	f2fs_down_write(&io->io_rwsem);
+
+	/* change META to META_FLUSH in the checkpoint procedure */
+	if (type >= META_FLUSH) {
+		io->fio.type = META_FLUSH;
+		io->bio->bi_opf |= REQ_META | REQ_PRIO | REQ_SYNC;
+		if (!test_opt(sbi, NOBARRIER))
+			io->bio->bi_opf |= REQ_PREFLUSH | REQ_FUA;
+	}
+	__submit_merged_bio(io);
+	f2fs_up_write(&io->io_rwsem);
+}
+#else
 static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
 				enum page_type type, enum temp_type temp)
 {
@@ -630,14 +680,45 @@ static void __f2fs_submit_merged_write(struct f2fs_sb_info *sbi,
 	__submit_merged_bio(io);
 	f2fs_up_write(&io->io_rwsem);
 }
+#endif
 
 static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
-				struct inode *inode, struct page *page,
-				nid_t ino, enum page_type type, bool force)
+        struct inode *inode, struct page *page,
+        nid_t ino, enum page_type type, bool force)
 {
 	enum temp_type temp;
 	bool ret = true;
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    int i;
+
+    for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
+        for (i = 0; i < MAX_ACTIVE_LOGS; i++) {
+            /* META is only in stream 0 */
+            if (type >= META && i >= 1)
+                break;
+
+            /* If stream is not active skip checking all other streams for this type */
+            if (type < META && !__test_inuse_stream(sbi, temp + (type * NR_TEMP_TYPE), i))
+                break;
+
+            if (!force)	{
+                enum page_type btype = PAGE_TYPE_OF_BIO(type);
+                struct f2fs_bio_info *io = sbi->write_io[i + (MAX_ACTIVE_LOGS * btype)] + temp;
+
+                f2fs_down_read(&io->io_rwsem);
+                ret = __has_merged_page(io->bio, inode, page, ino);
+                f2fs_up_read(&io->io_rwsem);
+            }
+            if (ret)
+                __f2fs_submit_merged_write(sbi, type, temp, i);
+        }
+
+        /* TODO: use HOT temp only for meta pages now. */
+        if (type >= META)
+            break;
+    }
+#else
 	for (temp = HOT; temp < NR_TEMP_TYPE; temp++) {
 		if (!force)	{
 			enum page_type btype = PAGE_TYPE_OF_BIO(type);
@@ -654,19 +735,21 @@ static void __submit_merged_write_cond(struct f2fs_sb_info *sbi,
 		if (type >= META)
 			break;
 	}
+#endif
 }
 
 void f2fs_submit_merged_write(struct f2fs_sb_info *sbi, enum page_type type)
 {
-	__submit_merged_write_cond(sbi, NULL, NULL, 0, type, true);
+    __submit_merged_write_cond(sbi, NULL, NULL, 0, type, true);
 }
 
 void f2fs_submit_merged_write_cond(struct f2fs_sb_info *sbi,
-				struct inode *inode, struct page *page,
-				nid_t ino, enum page_type type)
+        struct inode *inode, struct page *page,
+        nid_t ino, enum page_type type)
 {
-	__submit_merged_write_cond(sbi, inode, page, ino, type, false);
+    __submit_merged_write_cond(sbi, inode, page, ino, type, false);
 }
+
 
 void f2fs_flush_merged_writes(struct f2fs_sb_info *sbi)
 {
@@ -753,6 +836,26 @@ static bool io_is_mergeable(struct f2fs_sb_info *sbi, struct bio *bio,
 	return io_type_is_mergeable(io, fio);
 }
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+static void add_bio_entry(struct f2fs_sb_info *sbi, struct bio *bio,
+				struct page *page, enum temp_type temp, 
+                unsigned int stream)
+{
+	struct f2fs_bio_info *io = sbi->write_io[stream + (MAX_ACTIVE_LOGS * DATA)] + temp;
+	struct bio_entry *be;
+
+	be = f2fs_kmem_cache_alloc(bio_entry_slab, GFP_NOFS, true, NULL);
+	be->bio = bio;
+	bio_get(bio);
+
+	if (bio_add_page(bio, page, PAGE_SIZE, 0) != PAGE_SIZE)
+		f2fs_bug_on(sbi, 1);
+
+	f2fs_down_write(&io->bio_list_lock);
+	list_add_tail(&be->list, &io->bio_list);
+	f2fs_up_write(&io->bio_list_lock);
+}
+#else
 static void add_bio_entry(struct f2fs_sb_info *sbi, struct bio *bio,
 				struct page *page, enum temp_type temp)
 {
@@ -770,6 +873,7 @@ static void add_bio_entry(struct f2fs_sb_info *sbi, struct bio *bio,
 	list_add_tail(&be->list, &io->bio_list);
 	f2fs_up_write(&io->bio_list_lock);
 }
+#endif
 
 static void del_bio_entry(struct bio_entry *be)
 {
@@ -902,7 +1006,11 @@ alloc_new:
 		f2fs_set_bio_crypt_ctx(bio, fio->page->mapping->host,
 				       fio->page->index, fio, GFP_NOIO);
 
+#ifdef CONFIG_F2FS_MULTI_STREAM
+		add_bio_entry(fio->sbi, bio, page, fio->temp, fio->stream);
+#else
 		add_bio_entry(fio->sbi, bio, page, fio->temp);
+#endif
 	} else {
 		if (add_ipu_page(fio, &bio, page))
 			goto alloc_new;
@@ -923,7 +1031,11 @@ void f2fs_submit_page_write(struct f2fs_io_info *fio)
 {
 	struct f2fs_sb_info *sbi = fio->sbi;
 	enum page_type btype = PAGE_TYPE_OF_BIO(fio->type);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	struct f2fs_bio_info *io = sbi->write_io[fio->stream + (MAX_ACTIVE_LOGS * btype)] + fio->temp;
+#else
 	struct f2fs_bio_info *io = sbi->write_io[btype] + fio->temp;
+#endif
 	struct page *bio_page;
 
 	f2fs_bug_on(sbi, is_read_io(fio->op));
@@ -1372,6 +1484,9 @@ static int __allocate_data_block(struct dnode_of_data *dn, int seg_type)
 	block_t old_blkaddr;
 	blkcnt_t count = 1;
 	int err;
+#ifdef CONFIG_F2FS_MULTI_STREAM
+    unsigned int stream;
+#endif
 
 	if (unlikely(is_inode_flag_set(dn->inode, FI_NO_ALLOC)))
 		return -EPERM;
@@ -1390,8 +1505,14 @@ static int __allocate_data_block(struct dnode_of_data *dn, int seg_type)
 alloc:
 	set_summary(&sum, dn->nid, dn->ofs_in_node, ni.version);
 	old_blkaddr = dn->data_blkaddr;
+
+#ifdef CONFIG_F2FS_MULTI_STREAM
+	f2fs_allocate_data_block(sbi, NULL, old_blkaddr, &dn->data_blkaddr,
+				&sum, seg_type, NULL, &stream);
+#else
 	f2fs_allocate_data_block(sbi, NULL, old_blkaddr, &dn->data_blkaddr,
 				&sum, seg_type, NULL);
+#endif
 	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO) {
 		invalidate_mapping_pages(META_MAPPING(sbi),
 					old_blkaddr, old_blkaddr);
@@ -3808,7 +3929,14 @@ static int f2fs_migrate_blocks(struct inode *inode, block_t start_blk,
 		f2fs_down_write(&sbi->pin_sem);
 
 		f2fs_lock_op(sbi);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+        /* NOTE: Currently swap is not supported in streams, therefore we 
+         * pin all swap work to stream 0
+         */
+		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false, 0);
+#else
 		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false);
+#endif
 		f2fs_unlock_op(sbi);
 
 		set_inode_flag(inode, FI_SKIP_WRITES);

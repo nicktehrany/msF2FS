@@ -1697,7 +1697,11 @@ next_alloc:
 		f2fs_down_write(&sbi->pin_sem);
 
 		f2fs_lock_op(sbi);
+#ifdef CONFIG_F2FS_MULTI_STREAM
+		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false, 0);
+#else
 		f2fs_allocate_new_section(sbi, CURSEG_COLD_DATA_PINNED, false);
+#endif
 		f2fs_unlock_op(sbi);
 
 		map.m_seg_type = CURSEG_COLD_DATA_PINNED;
