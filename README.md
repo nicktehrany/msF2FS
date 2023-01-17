@@ -100,10 +100,10 @@ sudo reboot
 
 There are several parameters that specify the number of data streams to use and the stream allocation policy. The policy is provided by setting either of the acronyms as the policy (srr, spf, amfs). The default `mkfs.f2fs` can be used to format the device (available at: https://git.kernel.org/pub/scm/linux/kernel/git/jaegeuk/f2fs-tools.git).
 
-This is only an example, replace the command with $ZNS and $SSD device names, and desired number of streams. Any stream that is not specified will default to 1.
+This is only an example, replace the command with $ZNS and $SSD device names, and desired number of streams. Any stream that is not specified will default to 1. Streams are specified with `-o {hot/warm/cold}_data_streams=` and the policy with `-o stream_policy={srr,spf,amfs}`
 
 ```
-sudo env mkfs.f2fs -f -m -c /dev/${ZNS} /dev/${SSD}
+sudo mkfs.f2fs -f -m -c /dev/${ZNS} /dev/${SSD}
 sudo mkdir -p /mnt/f2fs
 sudo mount -t f2fs -o hot_data_streams=${HOT_DATA_STREAMS} -o warm_data_streams=${WARM_DATA_STREAMS} \
     -o cold_data_streams=${COLD_DATA_STREAMS} -o stream_policy=spf /dev/${SSD} /mnt/f2fs
