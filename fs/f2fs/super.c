@@ -4065,6 +4065,12 @@ static int init_blkz_info(struct f2fs_sb_info *sbi, int devi)
 
     FDEV(devi).max_active_zones = bdev_max_active_zones(bdev);
 
+    /* If there is no limit on active zones (e.g., when using FEMU), this is set to 0,
+     * therefore we must set this value to all available zones to avoid allocation
+     * deadlock. */
+    if (FDEV(devi).max_active_zones == 0)
+        FDEV(devi).max_active_zones = FDEV(devi).nr_blkz;
+
 #ifdef CONFIG_F2FS_MULTI_STREAM
     /* Note, only support single device for now */
     if (sbi->nr_max_streams > FDEV(devi).max_active_zones - RESERVED_BACKUP_ZONES) {

@@ -999,8 +999,7 @@ static inline bool __has_max_active_zones(struct f2fs_sb_info *sbi, unsigned int
 
     spin_unlock(&FDEV(dev_idx).blkz_active_lock);
 
-    /* we need to keep 3 zones as safety buffer in case NODE zone has not been written
-     * TODO UPDATE THIS TEXT
+    /* we need to keep RESERVED_BACKUP_ZONES zones as safety buffer in case NODE zone has not been written
      * and the zone is therefore not active yet. If we use up its resource with DATA streams
      * we cannot fall back to writing somewhere else when we are out of active zones.
      */
