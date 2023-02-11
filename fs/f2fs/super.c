@@ -4044,11 +4044,10 @@ static int init_blkz_info(struct f2fs_sb_info *sbi, int devi)
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
     /* Note, only support single device for now */
-    if (sbi->nr_max_streams > FDEV(devi).max_active_zones - RESERVED_BACKUP_ZONES) {
-        f2fs_err(sbi, "Too many streams specific. Streams specific %u"
-                " but active zones supported %u and %u zones reserved as backup.", 
-                sbi->nr_max_streams, FDEV(devi).max_active_zones, 
-                RESERVED_BACKUP_ZONES);
+    if (sbi->nr_max_streams > FDEV(devi).max_active_zones) {
+        f2fs_err(sbi, "Too many streams specified. Streams specified %u"
+                " but active zones supported %u.", 
+                sbi->nr_max_streams, FDEV(devi).max_active_zones);
         return -EINVAL;
     }
 #endif
