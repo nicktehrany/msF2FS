@@ -803,17 +803,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
             }
             f2fs_info(sbi, "CURRENTLY NOT SUPPORTED");
             return -EINVAL;
-            F2FS_OPTION(sbi).arg_nr_max_streams = arg;
-            F2FS_OPTION(sbi).set_arg_nr_max_streams = true;
+            /* F2FS_OPTION(sbi).arg_nr_max_streams = arg; */
+            /* F2FS_OPTION(sbi).set_arg_nr_max_streams = true; */
             break;
         case Opt_hot_data_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
-            /* { */
-            /*     f2fs_info(sbi, "Invalid hot data streams: %u must be at least 1 up to 11", arg); */
-            /*     return -EINVAL; */
-            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -821,10 +816,10 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
 
             }
-            F2FS_OPTION(sbi).arg_nr_max_streams += arg;
+            F2FS_OPTION(sbi).arg_nr_max_streams += arg - 1; /* 1 stream by default */
             if (F2FS_OPTION(sbi).arg_nr_max_streams > MAX_ACTIVE_LOGS)
             {
-                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                f2fs_err(sbi, "Invalid data streams: cannot be more than 16 in total");
                 return -EINVAL;
             }
             F2FS_OPTION(sbi).nr_streams[CURSEG_HOT_DATA] = arg;
@@ -833,11 +828,6 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_warm_data_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
-            /* { */
-            /*     f2fs_info(sbi, "Invalid warm data streams: %u must be at least 1 up to 11", arg); */
-            /*     return -EINVAL; */
-            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -845,10 +835,10 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
 
             }
-            F2FS_OPTION(sbi).arg_nr_max_streams += arg;
+            F2FS_OPTION(sbi).arg_nr_max_streams += arg - 1;
             if (F2FS_OPTION(sbi).arg_nr_max_streams > MAX_ACTIVE_LOGS)
             {
-                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                f2fs_err(sbi, "Invalid data streams: cannot be more than 16 in total");
                 return -EINVAL;
             }
             F2FS_OPTION(sbi).nr_streams[CURSEG_WARM_DATA] = arg;
@@ -857,11 +847,6 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
         case Opt_cold_data_streams:
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
-            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
-            /* { */
-            /*     f2fs_info(sbi, "Invalid cold data streams: %u must be at least 1 up to 11", arg); */
-            /*     return -EINVAL; */
-            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -869,10 +854,10 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
 
             }
-            F2FS_OPTION(sbi).arg_nr_max_streams += arg;
+            F2FS_OPTION(sbi).arg_nr_max_streams += arg - 1;
             if (F2FS_OPTION(sbi).arg_nr_max_streams > MAX_ACTIVE_LOGS)
             {
-                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                f2fs_err(sbi, "Invalid data streams: cannot be more than 16 in total");
                 return -EINVAL;
             }
             F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_DATA] = arg;
@@ -887,11 +872,6 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 f2fs_info(sbi, "Invalid hot node streams %u Currently maximum 1 is supported", arg);
                 return -EINVAL;
             }
-            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
-            /* { */
-            /*     f2fs_info(sbi, "Invalid hot node streams: %u must be at least 1 up to 11", arg); */
-            /*     return -EINVAL; */
-            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -899,10 +879,10 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
 
             }
-            F2FS_OPTION(sbi).arg_nr_max_streams += arg;
+            F2FS_OPTION(sbi).arg_nr_max_streams += arg - 1;
             if (F2FS_OPTION(sbi).arg_nr_max_streams > MAX_ACTIVE_LOGS)
             {
-                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                f2fs_err(sbi, "Invalid data streams: cannot be more than 16 in total");
                 return -EINVAL;
             }
             F2FS_OPTION(sbi).nr_streams[CURSEG_HOT_NODE] = arg;
@@ -917,11 +897,6 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 f2fs_info(sbi, "Invalid hot warm streams %u Currently maximum 1 is supported", arg);
                 return -EINVAL;
             }
-            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
-            /* { */
-            /*     f2fs_info(sbi, "Invalid warm node streams: %u must be at least 1 up to 11", arg); */
-            /*     return -EINVAL; */
-            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -929,10 +904,10 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
 
             }
-            F2FS_OPTION(sbi).arg_nr_max_streams += arg;
+            F2FS_OPTION(sbi).arg_nr_max_streams += arg - 1;
             if (F2FS_OPTION(sbi).arg_nr_max_streams > MAX_ACTIVE_LOGS)
             {
-                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                f2fs_err(sbi, "Invalid data streams: cannot be more than 16 in total");
                 return -EINVAL;
             }
             F2FS_OPTION(sbi).nr_streams[CURSEG_WARM_NODE] = arg;
@@ -947,11 +922,6 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 f2fs_info(sbi, "Invalid cold warm streams %u Currently maximum 1 is supported", arg);
                 return -EINVAL;
             }
-            /* if (arg > MAX_ACTIVE_LOGS - CURSEG_COLD_NODE || arg < 1) */
-            /* { */
-            /*     f2fs_info(sbi, "Invalid cold node streams: %u must be at least 1 up to 11", arg); */
-            /*     return -EINVAL; */
-            /* } */
             if (F2FS_OPTION(sbi).set_arg_nr_max_streams)
             {
                 f2fs_info(sbi, "streams option and per type streams are mutually exclusive."
@@ -959,10 +929,10 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
                 return -EINVAL;
 
             }
-            F2FS_OPTION(sbi).arg_nr_max_streams += arg;
+            F2FS_OPTION(sbi).arg_nr_max_streams += arg - 1;
             if (F2FS_OPTION(sbi).arg_nr_max_streams > MAX_ACTIVE_LOGS)
             {
-                f2fs_info(sbi, "Invalid data streams: cannot be more than 16 in total");
+                f2fs_err(sbi, "Invalid data streams: cannot be more than 16 in total");
                 return -EINVAL;
             }
             F2FS_OPTION(sbi).nr_streams[CURSEG_COLD_NODE] = arg;
@@ -2337,7 +2307,7 @@ static void default_options(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_F2FS_MULTI_STREAM
     F2FS_OPTION(sbi).stream_alloc_policy = STREAM_ALLOC_SPF;
     F2FS_OPTION(sbi).nr_max_streams = NR_CURSEG_PERSIST_TYPE;
-    F2FS_OPTION(sbi).arg_nr_max_streams = 0;
+    F2FS_OPTION(sbi).arg_nr_max_streams = 6; /* default 1 stream */
     F2FS_OPTION(sbi).set_arg_nr_max_streams = false;
     F2FS_OPTION(sbi).set_arg_per_stream_max = false;
     F2FS_OPTION(sbi).rr_stride = 1;
