@@ -32,7 +32,7 @@
 #define F2FS_RESERVED_NODE_NUM		3
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-#define RESERVED_BACKUP_ZONES 3
+#define RESERVED_BACKUP_ZONES 1
 #endif
 
 #define F2FS_ROOT_INO(sbi)	((sbi)->root_ino_num)
