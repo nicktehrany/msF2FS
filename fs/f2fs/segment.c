@@ -3751,7 +3751,7 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
         *stream = 0;
         active_streams = __get_number_active_streams_for_type(sbi, type);
 
-        while (*stream < active_streams) {
+        while (*stream < active_streams - 1) {
             /* release prior curseg lock */
             f2fs_up_read(&SM_I(sbi)->curseg_lock);
 
