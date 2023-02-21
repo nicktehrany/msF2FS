@@ -353,12 +353,8 @@ static inline unsigned int __get_number_active_streams(struct f2fs_sb_info *sbi)
 {
     unsigned int streams = 0;
 
-    /* Active streams read is atomic but let's make sure no other thread is 
-     * currently modifying any of the streams info 
-     * */
-	spin_lock(&sbi->streammap_lock);
+    /* active streams won't ever change after initalization, only readers */
     streams = atomic_read(&sbi->nr_active_streams);
-	spin_unlock(&sbi->streammap_lock);
     
     return streams;
 }
