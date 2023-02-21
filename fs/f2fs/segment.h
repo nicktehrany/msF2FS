@@ -368,9 +368,7 @@ static inline bool __test_inuse_stream(struct f2fs_sb_info *sbi,
 {
     bool is_bit_set = false;
 
-	spin_lock(&sbi->streammap_lock);
 	is_bit_set = test_bit_le(stream, sbi->streammap[type]);
-	spin_unlock(&sbi->streammap_lock);
 
     return is_bit_set;
 }
