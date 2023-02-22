@@ -501,16 +501,6 @@ static inline void seg_info_to_raw_sit(struct seg_entry *se,
 }
 
 #ifdef CONFIG_F2FS_MULTI_STREAM
-static inline unsigned int __find_next_inuse_stream(struct f2fs_sb_info *sbi,
-		unsigned int max, unsigned int stream, unsigned int type)
-{
-	unsigned int ret;
-	spin_lock(&sbi->streammap_lock);
-	ret = find_next_bit_le(sbi->streammap[type], max, stream);
-	spin_unlock(&sbi->streammap_lock);
-	return ret;
-}
-
 static inline bool __test_and_set_inuse_new_stream(struct f2fs_sb_info *sbi,
         unsigned int type, unsigned int *stream)
 {
@@ -548,9 +538,7 @@ static inline unsigned int __get_number_active_streams_for_type(struct f2fs_sb_i
 {
     unsigned int streams = 0;
 
-	spin_lock(&sbi->streammap_lock);
     streams = find_next_zero_bit_le(sbi->streammap[type], MAX_ACTIVE_LOGS, 0);
-	spin_unlock(&sbi->streammap_lock);
 
     return streams;
 }
